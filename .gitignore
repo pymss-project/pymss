@@ -171,3 +171,17 @@ cython_debug/
 .pypirc
 
 .DS_Store
+*.wav
+models/
+*.m4a
+.torchinductor_cache
+benchmark/
+benchmark_results
+AGENTS.md
+scripts
+data
+pretrain
+resources
+tmp
+all_models
+/mps/

@@ -1,100 +1,59 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from functools import partial
-
-import numpy as np
-import torch
-import json
-from omegaconf import OmegaConf
-from demucs.demucs import Demucs
-from demucs.hdemucs import HDemucs
-
 import math
-from openunmix.filtering import wiener
 from torch import nn
 from torch.nn import functional as F
 from fractions import Fraction
-from einops import rearrange
 
-from demucs.transformer import CrossTransformerEncoder
-
-from demucs.demucs import rescale_module
-from demucs.states import capture_init
-from demucs.spec import spectro, ispectro
-from demucs.hdemucs import pad1d, ScaledEmbedding, HEncLayer, MultiWrap, HDecLayer
+from .demucs_local import (
+    CrossTransformerEncoder,
+    HDecLayer,
+    HEncLayer,
+    MultiWrap,
+    ScaledEmbedding,
+    ispectro,
+    pad1d,
+    rescale_module,
+    spectro,
+)
+from ..config import to_plain
 
 
 class HTDemucs(nn.Module):
-    """
-    Spectrogram and hybrid Demucs model.
-    The spectrogram model has the same structure as Demucs, except the first few layers are over the
-    frequency axis, until there is only 1 frequency, and then it moves to time convolutions.
-    Frequency layers can still access information across time steps thanks to the DConv residual.
+    mps_model_backend = "torch"
+    mps_model_compute_dtype = torch.float16
 
-    Hybrid model have a parallel time branch. At some layer, the time branch has the same stride
-    as the frequency branch and then the two are combined. The opposite happens in the decoder.
-
-    Models can either use naive iSTFT from masking, Wiener filtering ([Ulhih et al. 2017]),
-    or complex as channels (CaC) [Choi et al. 2020]. Wiener filtering is based on
-    Open Unmix implementation [Stoter et al. 2019].
-
-    The loss is always on the temporal domain, by backpropagating through the above
-    output methods and iSTFT. This allows to define hybrid models nicely. However, this breaks
-    a bit Wiener filtering, as doing more iteration at test time will change the spectrogram
-    contribution, without changing the one from the waveform, which will lead to worse performance.
-    I tried using the residual option in OpenUnmix Wiener implementation, but it didn't improve.
-    CaC on the other hand provides similar performance for hybrid, and works naturally with
-    hybrid models.
-
-    This model also uses frequency embeddings are used to improve efficiency on convolutions
-    over the freq. axis, following [Isik et al. 2020] (https://arxiv.org/pdf/2008.04470.pdf).
-
-    Unlike classic Demucs, there is no resampling here, and normalization is always applied.
-    """
-
-    @capture_init
     def __init__(
         self,
         sources,
-        # Channels
         audio_channels=2,
         channels=48,
         channels_time=None,
         growth=2,
-        # STFT
         nfft=4096,
         num_subbands=1,
         wiener_iters=0,
         end_iters=0,
         wiener_residual=False,
         cac=True,
-        # Main structure
         depth=4,
         rewrite=True,
-        # Frequency branch
         multi_freqs=None,
         multi_freqs_depth=3,
         freq_emb=0.2,
         emb_scale=10,
         emb_smooth=True,
-        # Convolutions
         kernel_size=8,
         time_stride=2,
         stride=4,
         context=1,
         context_enc=0,
-        # Normalization
         norm_starts=4,
         norm_groups=4,
-        # DConv residual branch
         dconv_mode=1,
         dconv_depth=2,
         dconv_comp=8,
         dconv_init=1e-3,
-        # Before the Transformer
         bottom_channels=0,
-        # Transformer
         t_layers=5,
         t_emb="sin",
         t_hidden_scale=4.0,
@@ -124,104 +83,12 @@ class HTDemucs(nn.Module):
         t_global_window=100,
         t_sparsity=0.95,
         t_auto_sparsity=False,
-        # ------ Particuliar parameters
         t_cross_first=False,
-        # Weight init
         rescale=0.1,
-        # Metadata
         samplerate=44100,
         segment=10,
         use_train_segment=False,
     ):
-        """
-        Args:
-            sources (list[str]): list of source names.
-            audio_channels (int): input/output audio channels.
-            channels (int): initial number of hidden channels.
-            channels_time: if not None, use a different `channels` value for the time branch.
-            growth: increase the number of hidden channels by this factor at each layer.
-            nfft: number of fft bins. Note that changing this require careful computation of
-                various shape parameters and will not work out of the box for hybrid models.
-            wiener_iters: when using Wiener filtering, number of iterations at test time.
-            end_iters: same but at train time. For a hybrid model, must be equal to `wiener_iters`.
-            wiener_residual: add residual source before wiener filtering.
-            cac: uses complex as channels, i.e. complex numbers are 2 channels each
-                in input and output. no further processing is done before ISTFT.
-            depth (int): number of layers in the encoder and in the decoder.
-            rewrite (bool): add 1x1 convolution to each layer.
-            multi_freqs: list of frequency ratios for splitting frequency bands with `MultiWrap`.
-            multi_freqs_depth: how many layers to wrap with `MultiWrap`. Only the outermost
-                layers will be wrapped.
-            freq_emb: add frequency embedding after the first frequency layer if > 0,
-                the actual value controls the weight of the embedding.
-            emb_scale: equivalent to scaling the embedding learning rate
-            emb_smooth: initialize the embedding with a smooth one (with respect to frequencies).
-            kernel_size: kernel_size for encoder and decoder layers.
-            stride: stride for encoder and decoder layers.
-            time_stride: stride for the final time layer, after the merge.
-            context: context for 1x1 conv in the decoder.
-            context_enc: context for 1x1 conv in the encoder.
-            norm_starts: layer at which group norm starts being used.
-                decoder layers are numbered in reverse order.
-            norm_groups: number of groups for group norm.
-            dconv_mode: if 1: dconv in encoder only, 2: decoder only, 3: both.
-            dconv_depth: depth of residual DConv branch.
-            dconv_comp: compression of DConv branch.
-            dconv_attn: adds attention layers in DConv branch starting at this layer.
-            dconv_lstm: adds a LSTM layer in DConv branch starting at this layer.
-            dconv_init: initial scale for the DConv branch LayerScale.
-            bottom_channels: if >0 it adds a linear layer (1x1 Conv) before and after the
-                transformer in order to change the number of channels
-            t_layers: number of layers in each branch (waveform and spec) of the transformer
-            t_emb: "sin", "cape" or "scaled"
-            t_hidden_scale: the hidden scale of the Feedforward parts of the transformer
-                for instance if C = 384 (the number of channels in the transformer) and
-                t_hidden_scale = 4.0 then the intermediate layer of the FFN has dimension
-                384 * 4 = 1536
-            t_heads: number of heads for the transformer
-            t_dropout: dropout in the transformer
-            t_max_positions: max_positions for the "scaled" positional embedding, only
-                useful if t_emb="scaled"
-            t_norm_in: (bool) norm before addinf positional embedding and getting into the
-                transformer layers
-            t_norm_in_group: (bool) if True while t_norm_in=True, the norm is on all the
-                timesteps (GroupNorm with group=1)
-            t_group_norm: (bool) if True, the norms of the Encoder Layers are on all the
-                timesteps (GroupNorm with group=1)
-            t_norm_first: (bool) if True the norm is before the attention and before the FFN
-            t_norm_out: (bool) if True, there is a GroupNorm (group=1) at the end of each layer
-            t_max_period: (float) denominator in the sinusoidal embedding expression
-            t_weight_decay: (float) weight decay for the transformer
-            t_lr: (float) specific learning rate for the transformer
-            t_layer_scale: (bool) Layer Scale for the transformer
-            t_gelu: (bool) activations of the transformer are GeLU if True, ReLU else
-            t_weight_pos_embed: (float) weighting of the positional embedding
-            t_cape_mean_normalize: (bool) if t_emb="cape", normalisation of positional embeddings
-                see: https://arxiv.org/abs/2106.03143
-            t_cape_augment: (bool) if t_emb="cape", must be True during training and False
-                during the inference, see: https://arxiv.org/abs/2106.03143
-            t_cape_glob_loc_scale: (list of 3 floats) if t_emb="cape", CAPE parameters
-                see: https://arxiv.org/abs/2106.03143
-            t_sparse_self_attn: (bool) if True, the self attentions are sparse
-            t_sparse_cross_attn: (bool) if True, the cross-attentions are sparse (don't use it
-                unless you designed really specific masks)
-            t_mask_type: (str) can be "diag", "jmask", "random", "global" or any combination
-                with '_' between: i.e. "diag_jmask_random" (note that this is permutation
-                invariant i.e. "diag_jmask_random" is equivalent to "jmask_random_diag")
-            t_mask_random_seed: (int) if "random" is in t_mask_type, controls the seed
-                that generated the random part of the mask
-            t_sparse_attn_window: (int) if "diag" is in t_mask_type, for a query (i), and
-                a key (j), the mask is True id |i-j|<=t_sparse_attn_window
-            t_global_window: (int) if "global" is in t_mask_type, mask[:t_global_window, :]
-                and mask[:, :t_global_window] will be True
-            t_sparsity: (float) if "random" is in t_mask_type, t_sparsity is the sparsity
-                level of the random part of the mask.
-            t_cross_first: (bool) if True cross attention is the first layer of the
-                transformer (False seems to be better)
-            rescale: weight rescaling trick
-            use_train_segment: (bool) if True, the actual size that is used during the
-                training is used during inference.
-        """
         super().__init__()
         self.num_subbands = num_subbands
         self.cac = cac
@@ -424,18 +291,41 @@ class HTDemucs(nn.Module):
         else:
             self.crosstransformer = None
 
+    def set_mps_model_backend(self, backend=None, compute_dtype=None):
+        backend = (backend or "torch").lower()
+        if backend not in ("torch", "mlx_full"):
+            raise ValueError("mps_model_backend must be 'torch' or 'mlx_full'")
+        self.mps_model_backend = backend
+        if compute_dtype is None:
+            return
+        if isinstance(compute_dtype, str):
+            compute_dtype = {
+                "float16": torch.float16,
+                "fp16": torch.float16,
+                "float32": torch.float32,
+                "fp32": torch.float32,
+            }.get(compute_dtype.lower(), compute_dtype)
+        if compute_dtype not in (torch.float16, torch.float32):
+            raise ValueError("mps_model_compute_dtype must be 'float16' or 'float32'")
+        self.mps_model_compute_dtype = compute_dtype
+
+    def _use_mlx_full_forward(self, mix):
+        return (
+            not self.training
+            and self.mps_model_backend == "mlx_full"
+            and mix.device.type == "mps"
+        )
+
+    def mlx_forward_mx(self, raw_audio):
+        from .demucs_mlx import mlx_forward_demucs_mx
+
+        return mlx_forward_demucs_mx(self, raw_audio, self.mps_model_compute_dtype)
+
     def _spec(self, x):
         hl = self.hop_length
         nfft = self.nfft
         x0 = x  # noqa
 
-        # We re-pad the signal in order to keep the property
-        # that the size of the output is exactly the size of the input
-        # divided by the stride (here hop_length), when divisible.
-        # This is achieved by padding by 1/4th of the kernel size (here nfft).
-        # which is not supported by torch.stft.
-        # Having all convolution operations follow this convention allow to easily
-        # align the time and frequency branches later on.
         assert hl == nfft // 4
         le = int(math.ceil(x.shape[-1] / hl))
         pad = hl // 2 * 3
@@ -457,25 +347,18 @@ class HTDemucs(nn.Module):
         return x
 
     def _magnitude(self, z):
-        # return the magnitude of the spectrogram, except when cac is True,
-        # in which case we just move the complex dimension to the channel one.
         if self.cac:
             B, C, Fr, T = z.shape
-            m = torch.view_as_real(z).permute(0, 1, 4, 2, 3)
-            m = m.reshape(B, C * 2, Fr, T)
+            m = torch.view_as_real(z).permute(0, 1, 4, 2, 3).reshape(B, C * 2, Fr, T)
         else:
             m = z.abs()
         return m
 
     def _mask(self, z, m):
-        # Apply masking given the mixture spectrogram `z` and the estimated mask `m`.
-        # If `cac` is True, `m` is actually a full spectrogram and `z` is ignored.
         niters = self.wiener_iters
         if self.cac:
             B, S, C, Fr, T = m.shape
-            out = m.view(B, S, -1, 2, Fr, T).permute(0, 1, 2, 4, 5, 3)
-            out = torch.view_as_complex(out.contiguous())
-            return out
+            return torch.view_as_complex(m.view(B, S, -1, 2, Fr, T).permute(0, 1, 2, 4, 5, 3).contiguous())
         if self.training:
             niters = self.end_iters
         if niters < 0:
@@ -485,43 +368,9 @@ class HTDemucs(nn.Module):
             return self._wiener(m, z, niters)
 
     def _wiener(self, mag_out, mix_stft, niters):
-        # apply wiener filtering from OpenUnmix.
-        init = mix_stft.dtype
-        wiener_win_len = 300
-        residual = self.wiener_residual
-
-        B, S, C, Fq, T = mag_out.shape
-        mag_out = mag_out.permute(0, 4, 3, 2, 1)
-        mix_stft = torch.view_as_real(mix_stft.permute(0, 3, 2, 1))
-
-        outs = []
-        for sample in range(B):
-            pos = 0
-            out = []
-            for pos in range(0, T, wiener_win_len):
-                frame = slice(pos, pos + wiener_win_len)
-                z_out = wiener(
-                    mag_out[sample, frame],
-                    mix_stft[sample, frame],
-                    niters,
-                    residual=residual,
-                )
-                out.append(z_out.transpose(-1, -2))
-            outs.append(torch.cat(out, dim=0))
-        out = torch.view_as_complex(torch.stack(outs, 0))
-        out = out.permute(0, 4, 3, 2, 1).contiguous()
-        if residual:
-            out = out[:, :-1]
-        assert list(out.shape) == [B, S, C, Fq, T]
-        return out.to(init)
+        raise NotImplementedError('non-CaC Wiener Demucs is not supported by the dependency-free path')
 
     def valid_length(self, length: int):
-        """
-        Return a length that is appropriate for evaluation.
-        In our case, always return the training length, unless
-        it is smaller than the given length, in which case this
-        raises an error.
-        """
         if not self.use_train_segment:
             return length
         training_length = int(self.segment * self.samplerate)
@@ -534,18 +383,22 @@ class HTDemucs(nn.Module):
     def cac2cws(self, x):
         k = self.num_subbands
         b, c, f, t = x.shape
-        x = x.reshape(b, c, k, f // k, t)
-        x = x.reshape(b, c * k, f // k, t)
-        return x
+        return x.reshape(b, c * k, f // k, t)
 
     def cws2cac(self, x):
         k = self.num_subbands
         b, c, f, t = x.shape
-        x = x.reshape(b, c // k, k, f, t)
-        x = x.reshape(b, c // k, f * k, t)
-        return x
+        return x.reshape(b, c // k, f * k, t)
 
     def forward(self, mix):
+        if self._use_mlx_full_forward(mix):
+            try:
+                from .demucs_mlx import mlx_forward_demucs
+
+                return mlx_forward_demucs(self, mix, self.mps_model_compute_dtype)
+            except Exception as exc:
+                self._pymss_mlx_full_backend_error = repr(exc)
+                self.mps_model_backend = "torch"
         length = mix.shape[-1]
         length_pre_pad = None
         if self.use_train_segment:
@@ -553,92 +406,62 @@ class HTDemucs(nn.Module):
                 self.segment = Fraction(mix.shape[-1], self.samplerate)
             else:
                 training_length = int(self.segment * self.samplerate)
-                # print('Training length: {} Segment: {} Sample rate: {}'.format(training_length, self.segment, self.samplerate))
                 if mix.shape[-1] < training_length:
                     length_pre_pad = mix.shape[-1]
                     mix = F.pad(mix, (0, training_length - length_pre_pad))
-                # print("Mix: {}".format(mix.shape))
-        # print("Length: {}".format(length))
         z = self._spec(mix)
-        # print("Z: {} Type: {}".format(z.shape, z.dtype))
         mag = self._magnitude(z)
         x = mag
-        # print("MAG: {} Type: {}".format(x.shape, x.dtype))
 
         if self.num_subbands > 1:
             x = self.cac2cws(x)
-        # print("After SUBBANDS: {} Type: {}".format(x.shape, x.dtype))
 
         B, C, Fq, T = x.shape
 
-        # unlike previous Demucs, we always normalize because it is easier.
         mean = x.mean(dim=(1, 2, 3), keepdim=True)
         std = x.std(dim=(1, 2, 3), keepdim=True)
         x = (x - mean) / (1e-5 + std)
-        # x will be the freq. branch input.
 
-        # Prepare the time branch input.
         xt = mix
         meant = xt.mean(dim=(1, 2), keepdim=True)
         stdt = xt.std(dim=(1, 2), keepdim=True)
         xt = (xt - meant) / (1e-5 + stdt)
 
-        # print("XT: {}".format(xt.shape))
-
-        # okay, this is a giant mess I know...
-        saved = []  # skip connections, freq.
-        saved_t = []  # skip connections, time.
-        lengths = []  # saved lengths to properly remove padding, freq branch.
-        lengths_t = []  # saved lengths for time branch.
+        saved, saved_t, lengths_t = [], [], []
         for idx, encode in enumerate(self.encoder):
-            lengths.append(x.shape[-1])
+            skip_length = x.shape[-1]
             inject = None
             if idx < len(self.tencoder):
-                # we have not yet merged branches.
                 lengths_t.append(xt.shape[-1])
                 tenc = self.tencoder[idx]
                 xt = tenc(xt)
-                # print("Encode XT {}: {}".format(idx, xt.shape))
                 if not tenc.empty:
-                    # save for skip connection
                     saved_t.append(xt)
                 else:
-                    # tenc contains just the first conv., so that now time and freq.
-                    # branches have the same shape and can be merged.
                     inject = xt
             x = encode(x, inject)
-            # print("Encode X {}: {}".format(idx, x.shape))
             if idx == 0 and self.freq_emb is not None:
-                # add frequency embedding to allow for non equivariant convolutions
-                # over the frequency axis.
                 frs = torch.arange(x.shape[-2], device=x.device)
                 emb = self.freq_emb(frs).t()[None, :, :, None].expand_as(x)
                 x = x + self.freq_emb_scale * emb
 
-            saved.append(x)
+            saved.append((x, skip_length))
         if self.crosstransformer:
             if self.bottom_channels:
                 b, c, f, t = x.shape
-                x = rearrange(x, "b c f t-> b c (f t)")
-                x = self.channel_upsampler(x)
-                x = rearrange(x, "b c (f t)-> b c f t", f=f)
+                x = self.channel_upsampler(x.reshape(b, c, f * t)).reshape(b, -1, f, t)
                 xt = self.channel_upsampler_t(xt)
 
             x, xt = self.crosstransformer(x, xt)
-            # print("Cross Tran X {}, XT: {}".format(x.shape, xt.shape))
 
             if self.bottom_channels:
-                x = rearrange(x, "b c f t-> b c (f t)")
-                x = self.channel_downsampler(x)
-                x = rearrange(x, "b c (f t)-> b c f t", f=f)
+                b, c, f, t = x.shape
+                x = self.channel_downsampler(x.reshape(b, c, f * t)).reshape(b, -1, f, t)
                 xt = self.channel_downsampler_t(xt)
 
         for idx, decode in enumerate(self.decoder):
-            skip = saved.pop(-1)
-            x, pre = decode(x, skip, lengths.pop(-1))
-            # print('Decode {} X: {}'.format(idx, x.shape))
-            # `pre` contains the output just before final transposed convolution,
-            # which is used when the freq. and time branch separate.
+            skip, skip_length = saved.pop(-1)
+            x, pre = decode(x, skip, skip_length)
 
             offset = self.depth - len(self.tdecoder)
             if idx >= offset:
@@ -651,9 +474,7 @@ class HTDemucs(nn.Module):
                 else:
                     skip = saved_t.pop(-1)
                     xt, _ = tdec(xt, skip, length_t)
-                # print('Decode {} XT: {}'.format(idx, xt.shape))
 
-        # Let's make sure we used all stored skip connections.
         assert len(saved) == 0
         assert len(lengths_t) == 0
         assert len(saved_t) == 0
@@ -661,14 +482,10 @@ class HTDemucs(nn.Module):
         S = len(self.sources)
 
         if self.num_subbands > 1:
-            x = x.view(B, -1, Fq, T)
-            # print("X view 1: {}".format(x.shape))
-            x = self.cws2cac(x)
-            # print("X view 2: {}".format(x.shape))
+            x = self.cws2cac(x.view(B, -1, Fq, T))
 
         x = x.view(B, S, -1, Fq * self.num_subbands, T)
         x = x * std[:, None] + mean[:, None]
-        # print("X returned: {}".format(x.shape))
 
         zout = self._mask(z, x)
         if self.use_train_segment:
@@ -679,13 +496,7 @@ class HTDemucs(nn.Module):
         else:
             x = self._ispec(zout, length)
 
-        if self.use_train_segment:
-            if self.training:
-                xt = xt.view(B, S, -1, length)
-            else:
-                xt = xt.view(B, S, -1, training_length)
-        else:
-            xt = xt.view(B, S, -1, length)
+        xt = xt.view(B, S, -1, length if not self.use_train_segment or self.training else training_length)
         xt = xt * stdt[:, None] + meant[:, None]
         x = xt + x
         if length_pre_pad:
@@ -698,16 +509,9 @@ def get_model(args):
         'sources': list(args.training.instruments),
         'audio_channels': args.training.channels,
         'samplerate': args.training.samplerate,
-        # 'segment': args.model_segment or 4 * args.dset.segment,
         'segment': args.training.segment,
     }
-    klass = {
-        'demucs': Demucs,
-        'hdemucs': HDemucs,
-        'htdemucs': HTDemucs,
-    }[args.model]
-    kw = OmegaConf.to_container(getattr(args, args.model), resolve=True)
-    model = klass(**extra, **kw)
-    return model
-
-
+    if args.model != 'htdemucs':
+        raise ValueError(f"Only htdemucs configs are supported, got {args.model!r}")
+    kw = to_plain(getattr(args, args.model))
+    return HTDemucs(**extra, **kw)

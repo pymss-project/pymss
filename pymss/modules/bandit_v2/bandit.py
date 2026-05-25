@@ -1,9 +1,9 @@
 from typing import Dict, List, Optional
 
 import torch
-import torchaudio as ta
 from torch import nn
-import pytorch_lightning as pl
+
+from pymss.modules.bandit.core.model._spectral import _SpectralComponent
 
 from .bandsplit import BandSplitModule
 from .maskestim import OverlappingMaskEstimationModule
@@ -11,15 +11,10 @@ from .tfmodel import SeqBandModellingModule
 from .utils import MusicalBandsplitSpecification
 
 
+class BaseBandit(_SpectralComponent):
+    mps_model_backend = "torch"
+    mps_model_compute_dtype = torch.float16
 
-class BaseEndToEndModule(pl.LightningModule):
-    def __init__(
-        self,
-    ) -> None:
-        super().__init__()
-
-
-class BaseBandit(BaseEndToEndModule):
     def __init__(
         self,
         in_channels: int,
@@ -46,11 +41,7 @@ class BaseBandit(BaseEndToEndModule):
         pad_mode: str = "constant",
         onesided: bool = True,
     ):
-        super().__init__()
-
-        self.in_channels = in_channels
-
-        self.instantitate_spectral(
+        super().__init__(
             n_fft=n_fft,
             win_length=win_length,
             hop_length=hop_length,
@@ -62,6 +53,7 @@ class BaseBandit(BaseEndToEndModule):
             pad_mode=pad_mode,
             onesided=onesided,
         )
+        self.in_channels = in_channels
 
         self.instantiate_bandsplit(
             in_channels=in_channels,
@@ -84,49 +76,36 @@ class BaseBandit(BaseEndToEndModule):
             rnn_type=rnn_type,
         )
 
-    def instantitate_spectral(
-        self,
-        n_fft: int = 2048,
-        win_length: Optional[int] = 2048,
-        hop_length: int = 512,
-        window_fn: str = "hann_window",
-        wkwargs: Optional[Dict] = None,
-        power: Optional[int] = None,
-        normalized: bool = True,
-        center: bool = True,
-        pad_mode: str = "constant",
-        onesided: bool = True,
-    ):
-        assert power is None
+    def set_mps_model_backend(self, backend=None, compute_dtype=None):
+        backend = (backend or "torch").lower()
+        if backend not in ("torch", "mlx_full"):
+            raise ValueError("mps_model_backend must be 'torch' or 'mlx_full'")
+        self.mps_model_backend = backend
+        if compute_dtype is None:
+            return
+        if isinstance(compute_dtype, str):
+            compute_dtype = {
+                "float16": torch.float16,
+                "fp16": torch.float16,
+                "float32": torch.float32,
+                "fp32": torch.float32,
+            }.get(compute_dtype.lower(), compute_dtype)
+        if compute_dtype not in (torch.float16, torch.float32):
+            raise ValueError("mps_model_compute_dtype must be 'float16' or 'float32'")
+        self.mps_model_compute_dtype = compute_dtype
 
-        window_fn = torch.__dict__[window_fn]
-
-        self.stft = ta.transforms.Spectrogram(
-            n_fft=n_fft,
-            win_length=win_length,
-            hop_length=hop_length,
-            pad_mode=pad_mode,
-            pad=0,
-            window_fn=window_fn,
-            wkwargs=wkwargs,
-            power=power,
-            normalized=normalized,
-            center=center,
-            onesided=onesided,
+    def _use_mlx_full_forward(self, batch):
+        return (
+            not self.training
+            and self.mps_model_backend == "mlx_full"
+            and not isinstance(batch, dict)
+            and batch.device.type == "mps"
         )
 
-        self.istft = ta.transforms.InverseSpectrogram(
-            n_fft=n_fft,
-            win_length=win_length,
-            hop_length=hop_length,
-            pad_mode=pad_mode,
-            pad=0,
-            window_fn=window_fn,
-            wkwargs=wkwargs,
-            normalized=normalized,
-            center=center,
-            onesided=onesided,
-        )
+    def mlx_forward_mx(self, raw_audio):
+        from ..bandit_mlx import mlx_forward_bandit_mx
+
+        return mlx_forward_bandit_mx(self, raw_audio, self.mps_model_compute_dtype)
 
     def instantiate_bandsplit(
         self,
@@ -165,31 +144,26 @@ class BaseBandit(BaseEndToEndModule):
         bidirectional: bool = True,
         rnn_type: str = "LSTM",
     ):
-        try:
-            self.tf_model = torch.compile(
-                SeqBandModellingModule(
-                    n_modules=n_sqm_modules,
-                    emb_dim=emb_dim,
-                    rnn_dim=rnn_dim,
-                    bidirectional=bidirectional,
-                    rnn_type=rnn_type,
-                ),
-                disable=True,
-            )
-        except Exception as e:
-            self.tf_model = SeqBandModellingModule(
-                    n_modules=n_sqm_modules,
-                    emb_dim=emb_dim,
-                    rnn_dim=rnn_dim,
-                    bidirectional=bidirectional,
-                    rnn_type=rnn_type,
-                )
+        self.tf_model = SeqBandModellingModule(
+            n_modules=n_sqm_modules,
+            emb_dim=emb_dim,
+            rnn_dim=rnn_dim,
+            bidirectional=bidirectional,
+            rnn_type=rnn_type,
+        )
 
     def mask(self, x, m):
         return x * m
 
     def forward(self, batch, mode="train"):
-        # Model takes mono as input we give stereo, so we do process of each channel independently
+        if self._use_mlx_full_forward(batch):
+            try:
+                from ..bandit_mlx import mlx_forward_bandit
+
+                return mlx_forward_bandit(self, batch, self.mps_model_compute_dtype)
+            except Exception as exc:
+                self._pymss_mlx_full_backend_error = repr(exc)
+                self.mps_model_backend = "torch"
         init_shape = batch.shape
         if not isinstance(batch, dict):
             mono = batch.view(-1, 1, batch.shape[-1])
@@ -213,15 +187,7 @@ class BaseBandit(BaseEndToEndModule):
 
         batch = self.separate(batch)
 
-        if 1:
-            b = []
-            for s in self.stems:
-                # We need to obtain stereo again
-                r = batch['estimates'][s]['audio'].view(-1, init_shape[1], init_shape[2])
-                b.append(r)
-            # And we need to return back tensor and not independent stems
-            batch = torch.stack(b, dim=1)
-        return batch
+        return torch.stack([batch['estimates'][s]['audio'].view(-1, init_shape[1], init_shape[2]) for s in self.stems], dim=1)
 
     def encode(self, batch):
         x = batch["mixture"]["spectrogram"]
@@ -357,11 +323,10 @@ class Bandit(BaseBandit):
             m = mem(q)
 
             s = self.mask(x, m.to(x.dtype))
-            s = torch.reshape(s, x.shape)
+            s = s.reshape(x.shape)
             batch["estimates"][stem] = {
                 "audio": self.istft(s, length),
                 "spectrogram": s,
             }
 
         return batch
-

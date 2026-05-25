@@ -3,12 +3,6 @@ from typing import Iterable, Mapping, Union
 
 from torch import nn
 
-from .bandsplit import BandSplitModule
-from .tfmodel import (
-    SeqBandModellingModule,
-    TransformerTimeFreqModule,
-)
-
 
 class BandsplitCoreBase(nn.Module, ABC):
     band_split: nn.Module
