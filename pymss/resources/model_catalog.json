@@ -5,8 +5,8 @@
     "modelscope": "https://www.modelscope.cn/models/baicai1145/pymss"
   },
   "generated_from": "benchmark_results/model_catalog/all_models_capability_catalog.json + all_models filesystem",
-  "model_count": 362,
-  "supported_count": 350,
+  "model_count": 352,
+  "supported_count": 352,
   "models": [
     {
       "name": "Apollo_LQ_MP3_restoration.ckpt",
@@ -425,31 +425,6 @@
       "config_relpath": "experimental_general/BS-Roformer_LargeV1.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 740263433,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
-      "name": "bs_exp_siameseroformer.ckpt",
-      "aliases": [
-        "bs_exp_siameseroformer.ckpt",
-        "bs_exp_siameseroformer"
-      ],
-      "model_type": null,
-      "architecture": "siamese_roformer",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "experimental_general/bs_exp_siameseroformer.ckpt",
-      "config_relpath": "experimental_general/bs_exp_siameseroformer.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 204682749,
       "sha256": "",
       "primary_category": "experimental_general",
       "primary_category_cn": "实验/通用分离",
@@ -887,31 +862,6 @@
       "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
     },
     {
-      "name": "mbr-win10-sink8.ckpt",
-      "aliases": [
-        "mbr-win10-sink8.ckpt",
-        "mbr-win10-sink8"
-      ],
-      "model_type": "mel_band_roformer",
-      "architecture": "mel_band_roformer",
-      "supported": false,
-      "unsupported_reason": "missing_config",
-      "relpath": "experimental_general/mbr-win10-sink8.ckpt",
-      "config_relpath": "",
-      "auxiliary_relpaths": [],
-      "size_bytes": 913837877,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
       "name": "MDX23C_D1581.ckpt",
       "aliases": [
         "MDX23C_D1581.ckpt",
@@ -1162,31 +1112,6 @@
       "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
     },
     {
-      "name": "mini-bs-roformer-v2-46.8M.ckpt",
-      "aliases": [
-        "mini-bs-roformer-v2-46.8M.ckpt",
-        "mini-bs-roformer-v2-46.8M"
-      ],
-      "model_type": "bs_roformer",
-      "architecture": "bs_roformer",
-      "supported": false,
-      "unsupported_reason": "missing_config",
-      "relpath": "experimental_general/mini-bs-roformer-v2-46.8M.ckpt",
-      "config_relpath": "",
-      "auxiliary_relpaths": [],
-      "size_bytes": 94204810,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
       "name": "model2.ckpt",
       "aliases": [
         "model2.ckpt",
@@ -1383,31 +1308,6 @@
       "target_stem": "",
       "config_instruments": "dry|other",
       "config_target_instrument": "dry",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
-      "name": "model_melband_roformer_ep_124_si_sdr_increase_7.6621.ckpt",
-      "aliases": [
-        "model_melband_roformer_ep_124_si_sdr_increase_7.6621.ckpt",
-        "model_melband_roformer_ep_124_si_sdr_increase_7.6621"
-      ],
-      "model_type": "mel_band_roformer",
-      "architecture": "mel_band_roformer",
-      "supported": false,
-      "unsupported_reason": "missing_config",
-      "relpath": "experimental_general/model_melband_roformer_ep_124_si_sdr_increase_7.6621.ckpt",
-      "config_relpath": "",
-      "auxiliary_relpaths": [],
-      "size_bytes": 4645148401,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "",
-      "config_target_instrument": "",
       "classification_confidence": "low",
       "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
     },
@@ -4037,31 +3937,6 @@
       "classification_basis": "4 stems/MUSDB/HTDemucs4 名称"
     },
     {
-      "name": "fused_model_bs_conformer_sdr_9.18.ckpt",
-      "aliases": [
-        "fused_model_bs_conformer_sdr_9.18.ckpt",
-        "fused_model_bs_conformer_sdr_9.18"
-      ],
-      "model_type": null,
-      "architecture": "bs_conformer",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "music_stems/four_stem/fused_model_bs_conformer_sdr_9.18.ckpt",
-      "config_relpath": "music_stems/four_stem/fused_model_bs_conformer_sdr_9.18.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 149464276,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "drums|bass|other|vocals",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 4 stems"
-    },
-    {
       "name": "HTDemucs4.th",
       "aliases": [
         "HTDemucs4.th",
@@ -4235,31 +4110,6 @@
       "config_target_instrument": "",
       "classification_confidence": "high",
       "classification_basis": "4 stems/MUSDB/HTDemucs4 名称"
-    },
-    {
-      "name": "model_bs_mamba2_ep_11_sdr_6.8723.ckpt",
-      "aliases": [
-        "model_bs_mamba2_ep_11_sdr_6.8723.ckpt",
-        "model_bs_mamba2_ep_11_sdr_6.8723"
-      ],
-      "model_type": null,
-      "architecture": "bs_mamba2",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "music_stems/four_stem/model_bs_mamba2_ep_11_sdr_6.8723.ckpt",
-      "config_relpath": "music_stems/four_stem/model_bs_mamba2_ep_11_sdr_6.8723.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 142774366,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "drums|bass|other|vocals",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 4 stems"
     },
     {
       "name": "model_bs_roformer_ep_17_sdr_9.6568.ckpt",
@@ -6367,10 +6217,10 @@
         "dereverb_room_anvuew_sdr_13.7432.ckpt",
         "dereverb_room_anvuew_sdr_13.7432"
       ],
-      "model_type": null,
-      "architecture": "unknown",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
+      "model_type": "bs_roformer",
+      "architecture": "bs_roformer",
+      "supported": true,
+      "unsupported_reason": "",
       "relpath": "reverb_echo_control/dereverb/dereverb_room_anvuew_sdr_13.7432.ckpt",
       "config_relpath": "reverb_echo_control/dereverb/dereverb_room_anvuew_sdr_13.7432.yaml",
       "auxiliary_relpaths": [],
@@ -7294,10 +7144,10 @@
       ],
       "model_type": "mel_band_roformer",
       "architecture": "mel_band_roformer",
-      "supported": false,
-      "unsupported_reason": "missing_config",
+      "supported": true,
+      "unsupported_reason": "",
       "relpath": "vocal/vocal_extraction/16k_Vocal_Lightweight_MelBandRoformer.ckpt",
-      "config_relpath": "",
+      "config_relpath": "vocal/vocal_extraction/16k_Vocal_Lightweight_MelBandRoformer.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 59960415,
       "sha256": "",
@@ -7306,10 +7156,10 @@
       "secondary_category": "vocal_extraction",
       "secondary_category_cn": "人声提取",
       "target_stem": "vocals",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "medium",
-      "classification_basis": "vocal/vocals 名称"
+      "config_instruments": "vocals|instrumental",
+      "config_target_instrument": "vocals",
+      "classification_confidence": "high",
+      "classification_basis": "config 确认"
     },
     {
       "name": "big_beta5e.ckpt",
@@ -7425,31 +7275,6 @@
       "config_relpath": "vocal/vocal_extraction/BS-Roformer-Resurrection.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 204510749,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_extraction",
-      "secondary_category_cn": "人声提取",
-      "target_stem": "vocals",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "vocals",
-      "classification_confidence": "high",
-      "classification_basis": "config target_instrument=vocals"
-    },
-    {
-      "name": "bs_mamba2_vocals.ckpt",
-      "aliases": [
-        "bs_mamba2_vocals.ckpt",
-        "bs_mamba2_vocals"
-      ],
-      "model_type": null,
-      "architecture": "bs_mamba2",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "vocal/vocal_extraction/bs_mamba2_vocals.ckpt",
-      "config_relpath": "vocal/vocal_extraction/bs_mamba2_vocals.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 192610602,
       "sha256": "",
       "primary_category": "vocal",
       "primary_category_cn": "人声",
@@ -8125,31 +7950,6 @@
       "config_relpath": "vocal/vocal_extraction/melband_roformer_big_beta4.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 1574477088,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_extraction",
-      "secondary_category_cn": "人声提取",
-      "target_stem": "vocals",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "vocals",
-      "classification_confidence": "high",
-      "classification_basis": "config target_instrument=vocals"
-    },
-    {
-      "name": "model_bs_polarformer_float16.ckpt",
-      "aliases": [
-        "model_bs_polarformer_float16.ckpt",
-        "model_bs_polarformer_float16"
-      ],
-      "model_type": null,
-      "architecture": "bs_polarformer",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "vocal/vocal_extraction/model_bs_polarformer_float16.ckpt",
-      "config_relpath": "vocal/vocal_extraction/model_bs_polarformer_float16.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 102410301,
       "sha256": "",
       "primary_category": "vocal",
       "primary_category_cn": "人声",
@@ -8941,31 +8741,6 @@
       "classification_basis": "config two stems"
     },
     {
-      "name": "model_swin_upernet_ep_56_sdr_10.6703.ckpt",
-      "aliases": [
-        "model_swin_upernet_ep_56_sdr_10.6703.ckpt",
-        "model_swin_upernet_ep_56_sdr_10.6703"
-      ],
-      "model_type": null,
-      "architecture": "swin_upernet",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "vocal/vocal_instrumental_dual/model_swin_upernet_ep_56_sdr_10.6703.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/model_swin_upernet_ep_56_sdr_10.6703.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 939903161,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config two stems"
-    },
-    {
       "name": "model_vocals_htdemucs_sdr_8.78.ckpt",
       "aliases": [
         "model_vocals_htdemucs_sdr_8.78.ckpt",
@@ -9016,31 +8791,6 @@
       "classification_basis": "config two stems"
     },
     {
-      "name": "model_vocals_segm_models_sdr_9.77.ckpt",
-      "aliases": [
-        "model_vocals_segm_models_sdr_9.77.ckpt",
-        "model_vocals_segm_models_sdr_9.77"
-      ],
-      "model_type": null,
-      "architecture": "segm_models",
-      "supported": false,
-      "unsupported_reason": "unsupported_architecture",
-      "relpath": "vocal/vocal_instrumental_dual/model_vocals_segm_models_sdr_9.77.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/model_vocals_segm_models_sdr_9.77.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 863683537,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config two stems"
-    },
-    {
       "name": "neo_inst_beta.ckpt",
       "aliases": [
         "neo_inst_beta.ckpt",
@@ -9066,5 +8816,6 @@
       "classification_basis": "config two stems"
     }
   ],
-  "skipped": []
+  "skipped": [],
+  "unsupported_count": 0
 }
