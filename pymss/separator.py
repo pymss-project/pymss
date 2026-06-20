@@ -152,6 +152,16 @@ def _skip_torch_default_init():
             cls.reset_parameters = reset_parameters
 
 
+@contextmanager
+def _cudnn_benchmark():
+    previous = torch.backends.cudnn.benchmark
+    try:
+        torch.backends.cudnn.benchmark = True
+        yield
+    finally:
+        torch.backends.cudnn.benchmark = previous
+
+
 def _install_demucs_pickle_stubs():
     import sys
     import types
@@ -376,7 +386,6 @@ class MSSeparator:
         self.device_ids = device_ids
         self.device = _select_device(device, self.device_ids, self.logger)
 
-        torch.backends.cudnn.benchmark = True
         self.logger.info(f'Using device: {self.device}, device_ids: {self.device_ids}')
 
         self.model, self.config = self.load_model()
@@ -698,7 +707,8 @@ class MSSeparator:
         return success_files
 
     def separate(self, mix, pbar=True, stems=None):
-        return self._separate(mix, pbar=pbar, stems=stems)
+        with _cudnn_benchmark():
+            return self._separate(mix, pbar=pbar, stems=stems)
 
     def _separate(self, mix, pbar, stems=None):
         mix = _prepare_mix_channels(mix, _model_is_stereo(self.model_type, self.config), self.logger)
