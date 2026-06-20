@@ -748,6 +748,7 @@ class MSSeparator:
         self.device = _select_device(device, self.device_ids, self.logger)
         self.inference_params = _prefer_mlx_for_auto(device, self.device, self.inference_params, self.logger)
 
+        self._cudnn_benchmark_initial = torch.backends.cudnn.benchmark
         torch.backends.cudnn.benchmark = True
         self.logger.info(f"Using device: {self.device}, device_ids: {self.device_ids}")
 
@@ -1470,7 +1471,10 @@ class MSSeparator:
 
         Returns:
             None: Model references are dropped and CUDA/MPS/MLX caches are
-            cleared where available.
+            cleared where available. The ``torch.backends.cudnn.benchmark``
+            flag is also restored to the value it held before the separator
+            was initialized, so embedding pymss in a larger pipeline does not
+            leak the benchmark-enabled side effect into other modules.
 
         Example:
             >>> separator.close()"""
@@ -1492,10 +1496,30 @@ class MSSeparator:
                 except Exception as exc:
                     self.logger.debug(f"Could not move model to CPU during close: {exc}")
         finally:
+            self._restore_cudnn_benchmark()
             self.model = None
             self.config = None
             self.store_dirs = {}
             self.del_cache()
+
+    def _restore_cudnn_benchmark(self):
+        """Restore ``torch.backends.cudnn.benchmark`` to its pre-init value.
+
+        Args:
+            None: This callable does not accept user-provided arguments.
+
+        Returns:
+            None: When the separator captured an initial ``cudnn.benchmark``
+            value during initialization, the global flag is restored to that
+            value so downstream modules observe the same state as before
+            pymss ran."""
+        initial = getattr(self, "_cudnn_benchmark_initial", None)
+        if initial is None:
+            return
+        try:
+            torch.backends.cudnn.benchmark = initial
+        except Exception as exc:
+            self.logger.debug(f"Could not restore torch.backends.cudnn.benchmark: {exc}")
 
     def del_cache(self):
         """Run garbage collection and clear accelerator memory caches.
