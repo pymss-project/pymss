@@ -1,7 +1,7 @@
 import torch
 
 from ..bs_roformer.mlx_attention import _linear, _mlx_dtype, _torch_to_mlx_array
-from .uvr_lib_v5.vr_network import layers, layers_new, nets, nets_new
+from pymss_core.modules.vocal_remover.uvr_lib_v5.vr_network import layers, layers_new, nets, nets_new
 
 
 def _mlx_param(module, name, tensor, dtype):

@@ -7,6 +7,8 @@ from tqdm.auto import tqdm
 from numpy.typing import NDArray
 from typing import Dict
 
+from pymss_core import get_model_from_config as _core_get_model_from_config
+
 from .config import load_config
 
 
@@ -102,50 +104,18 @@ def get_model_from_config(model_type, config_path, model_kwargs_override=None):
 
     Returns:
         Any: Computed result."""
-    model_kwargs_override = model_kwargs_override or {}
-    config = load_config(config_path)
-
-    if model_type == "mdx23c":
-        from .modules.mdx23c_tfc_tdf_v3 import TFC_TDF_net
-
-        return TFC_TDF_net(config), config
-    elif model_type == "htdemucs":
-        from .modules.demucs4ht import get_model
-
-        return get_model(config), config
-    elif model_type == "mel_band_roformer":
-        from .modules.bs_roformer import MelBandRoformer
-
-        model_kwargs = dict(config.model)
-        model_kwargs.update(model_kwargs_override)
-        return MelBandRoformer(**model_kwargs), config
-    elif model_type == "bs_roformer":
-        from .modules.bs_roformer import BSRoformer
-
-        return BSRoformer(**dict(config.model)), config
-    elif model_type == "bs_roformer_hyperace":
-        from .modules.bs_roformer import BSRoformerHyperACE
-
-        return BSRoformerHyperACE(**dict(config.model)), config
-    elif model_type == "bandit":
-        from .modules.bandit.core.model import MultiMaskMultiSourceBandSplitRNNSimple
-
-        return MultiMaskMultiSourceBandSplitRNNSimple(**config.model), config
-    elif model_type == "bandit_v2":
+    if model_type == "mel_band_roformer":
+        model_kwargs_override = dict(model_kwargs_override or {})
+        model_kwargs_override.setdefault("zero_dc", False)
+        return _core_get_model_from_config(
+            model_type, config_path, model_kwargs_override=model_kwargs_override
+        )
+    if model_type == "bandit_v2":
+        config = load_config(config_path)
         from .modules.bandit_v2.bandit import Bandit
 
         return Bandit(**config.kwargs), config
-    elif model_type == "scnet":
-        from .modules.scnet import SCNet
-
-        return SCNet(**config.model), config
-    elif model_type == "apollo":
-        from .modules.look2hear.apollo import Apollo
-
-        return Apollo(**config.model), config
-    elif model_type == "vr":
-        raise ValueError("VR models are loaded directly by MSSeparator and do not use YAML config loading")
-    raise ValueError(f"Model type {model_type} not supported")
+    return _core_get_model_from_config(model_type, config_path, model_kwargs_override=model_kwargs_override)
 
 
 def clear_mlx_cache():

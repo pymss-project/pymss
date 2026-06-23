@@ -1,5 +1,6 @@
 import math
 import os
+from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
@@ -8,13 +9,37 @@ from torch import nn
 from torch.nn.utils.fusion import fuse_conv_bn_eval
 from tqdm import tqdm
 
+from pymss_core.modules.vocal_remover import ModelParameters, determine_model_capacity
+from pymss_core.modules.vocal_remover.uvr_lib_v5.vr_network import nets_new
+
 from .common_separator import CommonSeparator
 from .uvr_lib_v5 import spec_utils
-from .uvr_lib_v5.vr_network import nets, nets_new
-from .uvr_lib_v5.vr_network.model_param_init import ModelParameters
 
 
-VR_PARAMS_DIR = Path(__file__).resolve().parents[2] / "resources" / "vr_modelparams"
+class _ResourceDir:
+    def __init__(self, package):
+        self._root = files(package)
+
+    def __truediv__(self, name):
+        return self._root / name
+
+    def exists(self):
+        return self._root.is_dir()
+
+    def is_dir(self):
+        return self._root.is_dir()
+
+    def iterdir(self):
+        return self._root.iterdir()
+
+    def __str__(self):
+        return str(self._root)
+
+    def __repr__(self):
+        return repr(self._root)
+
+
+VR_PARAMS_DIR = _ResourceDir("pymss_core.resources.vr_modelparams")
 
 
 def _fuse_sequential_conv_bn(module):
@@ -61,7 +86,7 @@ class VRSeparator(CommonSeparator):
             self.is_vr_51_model = True
 
         params_path = VR_PARAMS_DIR / f"{self.model_data['vr_model_param']}.json"
-        if not params_path.exists():
+        if not params_path.is_file():
             raise FileNotFoundError(f"VR model parameter file not found: {params_path}")
         self.model_params = ModelParameters(str(params_path))
 
@@ -148,7 +173,7 @@ class VRSeparator(CommonSeparator):
             )
             self.is_vr_51_model = True
         else:
-            self.model_run = nets.determine_model_capacity(self.model_params.param["bins"] * 2, nn_arch_size)
+            self.model_run = determine_model_capacity(self.model_params.param["bins"] * 2, nn_arch_size)
 
         try:
             state_dict = torch.load(self.model_path, map_location="cpu", weights_only=True)

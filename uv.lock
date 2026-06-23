@@ -1407,7 +1407,7 @@ wheels = [
 
 [[package]]
 name = "pymss"
-version = "2.0.5"
+version = "2.0.7"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
@@ -1415,6 +1415,7 @@ dependencies = [
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pymss-core" },
     { name = "pyyaml" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
@@ -1429,7 +1430,9 @@ server = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastapi" },
     { name = "pytest" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
@@ -1439,6 +1442,7 @@ requires-dist = [
     { name = "librosa", specifier = ">=0.10.2" },
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.31.0" },
     { name = "numpy", specifier = ">=1.26" },
+    { name = "pymss-core", specifier = ">=0.1.4" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.7.1" },
     { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.7.1", index = "https://download.pytorch.org/whl/cu128" },
@@ -1448,7 +1452,27 @@ requires-dist = [
 provides-extras = ["server"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
+dev = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
+
+[[package]]
+name = "pymss-core"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pyyaml" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/df/54f7d01448fd769c59aa51b7964e2ad90bcdfb5d36d84fd4cbb2c7305fe5/pymss_core-0.1.4.tar.gz", hash = "sha256:8d2a9ffd36dee6d1326cf7a4ad28664682bb95b76c0f77eb779a926fd6e95b38", size = 100623, upload-time = "2026-06-14T15:51:38.131Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/5b/c3247343509177df9537854144ef1d2cbfdbb30b330f8521c884ea9faf4f/pymss_core-0.1.4-py3-none-any.whl", hash = "sha256:2bbe60fe1c8ad690833fb947e7b004462a06b67867a45deb8b8a5a63e1da861f", size = 131714, upload-time = "2026-06-14T15:51:36.815Z" },
+]
 
 [[package]]
 name = "pytest"
