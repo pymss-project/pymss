@@ -180,11 +180,75 @@ def init_roformer_band_modules(
 class RoformerRuntimeMixin:
     mps_model_backend = "torch"
     mps_model_compute_dtype = torch.float16
+    coreml_ane_package_root = None
+    coreml_ane_compute_unit = "cpu_and_ne"
+    coreml_ane_storage = "memory"
+    coreml_ane_memmap_dir = None
+    coreml_ane_keep_memmap = False
+    private_ane_cache_transformers = False
+    private_ane_transformer_cache_segments = 0
+    private_ane_auto_transformer_cache_segments = True
+    private_ane_auto_transformer_cache_min_free_memory_percent = 55
+    private_ane_auto_transformer_cache_max_segments = 0
+    private_ane_persistent_transformer_handles = False
+    private_ane_allow_transformer_handle_cache = False
+    private_ane_max_transformer_layers = None
+    private_ane_auto_chunk_batch_max = 4
+    private_ane_auto_chunk_batch_min_free_memory_percent = 55
+    private_ane_skip_transformers = False
+    private_ane_gelu_mode = "EXACT"
+    private_ane_max_rss_mb = 1792
+    private_ane_preload_min_free_memory_percent = 0
+    private_ane_preload_max_swap_used_mb = 0
+    private_ane_min_free_memory_percent = 0
+    private_ane_emergency_free_memory_percent = 0
+    private_ane_free_memory_strikes = 3
+    private_ane_max_ane_service_rss_mb = 512
+    private_ane_max_swap_used_mb = 0
+    private_ane_fuse_residual = True
+    private_ane_fuse_gate_ffn = False
+    private_ane_fuse_gate_ffn_max_work_items = 8192
+    private_ane_two_input_gate = False
+    private_ane_bridge_pack_gate = True
+    private_ane_bridge_client_variant = "default"
+    private_ane_bridge_wrapper_route = "default"
+    private_ane_surface_handoff_gate_ffn = False
+    private_ane_batch_axis_eval = False
+    private_ane_tiled_time_attention_pre = False
+    private_ane_tiled_time_attention_pre_q_chunk = 128
+    private_ane_transformer_hot_gc_interval = 0
+    private_ane_transformer_guard_interval = 0
+    private_ane_fused_band_split = False
+    private_ane_fused_band_split_max_outputs = 4
+    private_ane_fused_mask_estimator = False
+    private_ane_fused_mask_estimator_max_outputs = 8
+    private_ane_persistent_aux_handles = False
+    private_ane_dynamic_stft = True
+    private_ane_dynamic_stft_max_outputs = 2048
+    private_ane_native_dynamic_stft_input_weights = True
+    private_ane_fused_stft = False
+    private_ane_fused_stft_max_outputs = 17
+    private_ane_persistent_stft_handles = True
+    private_ane_preload_stft_handles = True
+    private_ane_stft_bridge_qos = "auto"
+    private_ane_stft_atomic_writes = "auto"
+    private_ane_stft_cache_tmpdir = "auto"
+    private_ane_stft_keep_tmpdir = True
+    private_ane_release_aux_handles_before_istft = True
+    private_ane_defer_istft_until_after_masks = False
+    private_ane_stft_istft_batch_channels = False
+    private_ane_gpu_final_norm_mask = False
+    private_ane_gpu_istft = False
+    private_ane_allow_torch_fallback = False
+    private_ane_load_cache = False
+    private_ane_cache_tmpdir = None
+    private_ane_keep_tmpdir = False
+    private_ane_skip_source_write_on_cache_hit = False
 
     def set_mps_model_backend(self, backend=None, compute_dtype=None):
         backend = (backend or "torch").lower()
-        if backend not in ("torch", "mlx_full"):
-            raise ValueError("mps_model_backend must be 'torch' or 'mlx_full'")
+        if backend not in ("torch", "mlx_full", "coreml_ane_segmented", "private_ane"):
+            raise ValueError("mps_model_backend must be 'torch', 'mlx_full', 'coreml_ane_segmented', or 'private_ane'")
         self.mps_model_backend = backend
         if compute_dtype is not None:
             if isinstance(compute_dtype, str):
@@ -198,11 +262,60 @@ class RoformerRuntimeMixin:
                 raise ValueError("mps_model_compute_dtype must be 'float16' or 'float32'")
             self.mps_model_compute_dtype = compute_dtype
 
+    def set_coreml_ane_config(
+            self,
+            package_root=None,
+            compute_unit=None,
+            storage=None,
+            memmap_dir=None,
+            keep_memmap=None,
+    ):
+        changed = False
+        if package_root is not None:
+            self.coreml_ane_package_root = package_root
+            changed = True
+        if compute_unit is not None:
+            compute_unit = str(compute_unit).lower()
+            if compute_unit not in ("cpu_only", "cpu_and_gpu", "cpu_and_ne", "all"):
+                raise ValueError("coreml_ane_compute_unit must be 'cpu_only', 'cpu_and_gpu', 'cpu_and_ne', or 'all'")
+            self.coreml_ane_compute_unit = compute_unit
+            changed = True
+        if storage is not None:
+            storage = str(storage).lower()
+            if storage not in ("memory", "memmap"):
+                raise ValueError("coreml_ane_storage must be 'memory' or 'memmap'")
+            self.coreml_ane_storage = storage
+            changed = True
+        if memmap_dir is not None:
+            self.coreml_ane_memmap_dir = memmap_dir
+            changed = True
+        if keep_memmap is not None:
+            if isinstance(keep_memmap, str):
+                keep_memmap = keep_memmap.lower() in ("1", "true", "yes", "on")
+            self.coreml_ane_keep_memmap = bool(keep_memmap)
+            changed = True
+        if changed and hasattr(self, "_coreml_ane_runner"):
+            delattr(self, "_coreml_ane_runner")
+
     def _use_mlx_full_forward(self, raw_audio):
         return (
             not self.training
             and self.mps_model_backend == "mlx_full"
             and raw_audio.device.type == "mps"
+        )
+
+    def _use_coreml_ane_forward(self, raw_audio):
+        return (
+            not self.training
+            and self.mps_model_backend == "coreml_ane_segmented"
+            and raw_audio.device.type in ("cpu", "mps")
+        )
+
+    def _use_private_ane_forward(self, raw_audio):
+        return (
+            not self.training
+            and self.mps_model_backend == "private_ane"
+            and raw_audio.device.type in ("cpu", "mps")
         )
 
     def mlx_forward_mx(self, raw_audio):

@@ -100,6 +100,22 @@ class BSRoformer(RoformerRuntimeMixin, Module):
         return forward_roformer_mask_core(self, stft_repr)
 
     def forward(self, raw_audio):
+        if self._use_coreml_ane_forward(raw_audio):
+            try:
+                from .coreml_ane import coreml_ane_forward_roformer
+
+                return coreml_ane_forward_roformer(self, raw_audio)
+            except Exception as exc:
+                self._pymss_coreml_ane_backend_error = repr(exc)
+                raise RuntimeError("coreml_ane_segmented backend failed") from exc
+        if self._use_private_ane_forward(raw_audio):
+            try:
+                from .private_ane import private_ane_forward_roformer
+
+                return private_ane_forward_roformer(self, raw_audio)
+            except Exception as exc:
+                self._pymss_private_ane_backend_error = repr(exc)
+                raise RuntimeError("private_ane backend failed") from exc
         if self._use_mlx_full_forward(raw_audio):
             try:
                 from .mlx_roformer import mlx_forward_roformer

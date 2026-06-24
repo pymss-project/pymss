@@ -1,4 +1,11 @@
+from collections import deque
 from contextlib import contextmanager, nullcontext
+import gc
+import json
+import os
+import re
+import subprocess
+import time
 
 import numpy as np
 import torch
@@ -8,6 +15,17 @@ from numpy.typing import NDArray
 from typing import Dict
 
 from .config import load_config
+
+
+PRIVATE_ANE_MEMORY_TAIL_SAMPLES = 64
+PRIVATE_ANE_TRANSFORMER_TIMING_TAIL = 64
+PRIVATE_ANE_MIN_FREE_MEMORY_PERCENT = 0
+PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT = 0
+PRIVATE_ANE_MAX_SWAP_USED_MB = 0.0
+PRIVATE_ANE_FREE_MEMORY_STRIKES = 3
+PRIVATE_ANE_MIN_ALLOWED_FREE_MEMORY_PERCENT = 30
+PRIVATE_ANE_MIN_ALLOWED_EMERGENCY_FREE_MEMORY_PERCENT = 30
+PRIVATE_ANE_MAX_ALLOWED_SWAP_USED_MB = 1536.0
 
 
 class _ProgressContext:
@@ -217,6 +235,308 @@ def _prepare_mix_for_chunks(mix, border):
     if length_init > 2 * border and border > 0:
         mix = nn.functional.pad(mix, (border, border), mode='reflect')
     return mix, length_init
+
+
+def _current_rss_mb():
+    try:
+        rss_pages = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())], text=True).strip())
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return None
+    return rss_pages / 1024.0
+
+
+def _system_free_memory_percent():
+    try:
+        output = subprocess.check_output(["memory_pressure"], text=True, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    match = re.search(r"System-wide memory free percentage:\s*(\d+)%", output)
+    return None if match is None else int(match.group(1))
+
+
+def _system_swap_used_mb():
+    try:
+        output = subprocess.check_output(["sysctl", "vm.swapusage"], text=True, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    match = re.search(r"used\s*=\s*([0-9.]+)([KMG])", output)
+    if match is None:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2)
+    if unit == "K":
+        return value / 1024.0
+    if unit == "G":
+        return value * 1024.0
+    return value
+
+
+def _ane_service_rss_mb():
+    try:
+        output = subprocess.check_output(["ps", "-axo", "rss=,command="], text=True)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    total_kb = 0
+    for line in output.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        rss_text, command = parts
+        if (
+                "ANECompilerService" not in command
+                and "/usr/libexec/aned" not in command
+                and "/usr/libexec/aneuserd" not in command
+        ):
+            continue
+        try:
+            total_kb += int(rss_text)
+        except ValueError:
+            continue
+    return total_kb / 1024.0
+
+
+def _release_private_ane_batch_memory():
+    started = time.perf_counter()
+    gc_started = time.perf_counter()
+    gc.collect()
+    gc_sec = time.perf_counter() - gc_started
+    mps_empty_cache_sec = 0.0
+    if hasattr(torch, "mps") and torch.backends.mps.is_available():
+        try:
+            mps_started = time.perf_counter()
+            torch.mps.empty_cache()
+            mps_empty_cache_sec = time.perf_counter() - mps_started
+        except RuntimeError:
+            pass
+    return {
+        "wall_sec": float(time.perf_counter() - started),
+        "gc_sec": float(gc_sec),
+        "mps_empty_cache_sec": float(mps_empty_cache_sec),
+    }
+
+
+def _private_ane_trace_event(event, **fields):
+    path = os.environ.get("PYMSS_PRIVATE_ANE_TRACE_PATH")
+    if not path:
+        return
+    row = {"time_sec": time.time(), "event": event}
+    for key, value in fields.items():
+        if value is not None:
+            row[key] = value
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, separators=(",", ":")) + "\n")
+            handle.flush()
+    except OSError:
+        pass
+
+
+@contextmanager
+def _private_ane_runner_cleanup(model):
+    env_keys = ("TMPDIR", "ANE_BRIDGE_TMPDIR", "ANE_BRIDGE_LOAD_CACHE", "ANE_BRIDGE_KEEP_TMPDIR")
+    old_env = {key: os.environ.get(key) for key in env_keys}
+    try:
+        yield
+    finally:
+        runner = getattr(model, "_private_ane_runner", None)
+        persistent_transformer = _private_ane_bool_config(
+            getattr(model, "private_ane_persistent_transformer_handles", False)
+        )
+        if runner is not None and persistent_transformer and hasattr(runner, "clear_non_transformer_cache"):
+            try:
+                runner.clear_non_transformer_cache(preserve_aux_handles=False)
+            except Exception:
+                pass
+        elif runner is not None and hasattr(runner, "clear_cache"):
+            try:
+                runner.clear_cache()
+            except Exception:
+                pass
+        for key, value in old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        _release_private_ane_batch_memory()
+
+
+def _private_ane_bool_config(value):
+    if isinstance(value, str):
+        return value.lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _private_ane_config_or_model(config, model, key, default=None):
+    missing = object()
+    value = config.inference.get(key, missing)
+    if value is missing:
+        return getattr(model, key, default)
+    return value
+
+
+def _private_ane_bool_config_or_model(config, model, key, default=False):
+    return _private_ane_bool_config(_private_ane_config_or_model(config, model, key, default))
+
+
+def _private_ane_optional_int(value, default=None):
+    if value in (None, "", 0, "0"):
+        return default
+    if value == "default":
+        return default
+    return int(value)
+
+
+def _resolve_private_ane_chunk_batch_size(config, chunk_count, max_chunks):
+    value = config.inference.get("private_ane_chunk_batch_size", None)
+    defaulted_to_auto = value in (None, "")
+    if value in (None, ""):
+        value = "auto"
+    if value not in ("auto", 0, "0"):
+        chunk_batch_size = int(value)
+        if chunk_batch_size < 1:
+            raise ValueError("inference.private_ane_chunk_batch_size must be >= 1, 0, or 'auto'")
+        return chunk_batch_size, "explicit", None
+
+    max_auto = _private_ane_optional_int(
+        config.inference.get("private_ane_auto_chunk_batch_max", 4),
+        4,
+    )
+    if max_auto is None or max_auto < 1:
+        raise ValueError("inference.private_ane_auto_chunk_batch_max must be >= 1")
+    limit = chunk_count if max_chunks is None else min(chunk_count, max_chunks)
+    target = max(1, min(limit, max_auto))
+    min_free = _private_ane_optional_int(
+        config.inference.get("private_ane_auto_chunk_batch_min_free_memory_percent", 55),
+        55,
+    )
+    free_percent = _system_free_memory_percent() if target > 1 and min_free is not None else None
+    if target > 1 and min_free is not None and (free_percent is None or free_percent < min_free):
+        return 1, "auto_default_memory_limited" if defaulted_to_auto else "auto_memory_limited", {
+            "requested": int(target),
+            "selected": 1,
+            "max": int(max_auto),
+            "free_memory_percent": free_percent,
+            "min_free_memory_percent": int(min_free),
+        }
+    return target, "auto_default" if defaulted_to_auto else "auto", {
+        "requested": int(target),
+        "selected": int(target),
+        "max": int(max_auto),
+        "free_memory_percent": free_percent,
+        "min_free_memory_percent": int(min_free) if min_free is not None else None,
+    }
+
+
+def _resolve_private_ane_transformer_cache_segments(config, model, chunk_count, chunk_batch_size):
+    explicit = config.inference.get("private_ane_transformer_cache_segments", 0)
+    allow_handle_cache = _private_ane_bool_config(
+        config.inference.get(
+            "private_ane_allow_transformer_handle_cache",
+            getattr(model, "private_ane_allow_transformer_handle_cache", False),
+        )
+    )
+    if explicit not in (None, "", 0, "0"):
+        segments = int(explicit)
+        if segments < 0:
+            raise ValueError("inference.private_ane_transformer_cache_segments must be >= 0")
+        if not allow_handle_cache:
+            raise ValueError(
+                "inference.private_ane_transformer_cache_segments > 0 is disabled by default "
+                "because even segments=1 has triggered system wired-memory pressure on this machine. "
+                "Set private_ane_allow_transformer_handle_cache=True only for native-supervised experiments."
+            )
+        return segments, "explicit", {
+            "enabled": True,
+            "selected": int(segments),
+            "allow_transformer_handle_cache": True,
+            "reason": "explicit_experimental",
+        }
+
+    chunk_batch_size = max(1, int(chunk_batch_size))
+    batch_count = (int(chunk_count) + chunk_batch_size - 1) // chunk_batch_size
+    auto_enabled = _private_ane_bool_config(
+        config.inference.get(
+            "private_ane_auto_transformer_cache_segments",
+            getattr(model, "private_ane_auto_transformer_cache_segments", True),
+        )
+    )
+    if not auto_enabled:
+        return 0, "auto_disabled", {
+            "enabled": False,
+            "selected": 0,
+            "allow_transformer_handle_cache": bool(allow_handle_cache),
+        }
+    if not allow_handle_cache:
+        return 0, "auto_disabled_wired_memory_risk", {
+            "enabled": False,
+            "selected": 0,
+            "allow_transformer_handle_cache": False,
+            "reason": "wired_memory_risk",
+        }
+    if batch_count > 1:
+        return 0, "auto_disabled_multi_batch", {
+            "enabled": False,
+            "selected": 0,
+            "batch_count": int(batch_count),
+            "allow_transformer_handle_cache": bool(allow_handle_cache),
+            "reason": "multi_batch_wired_memory_guard",
+        }
+
+    layer_count = len(getattr(model, "layers", ()))
+    max_layers = config.inference.get(
+        "private_ane_max_transformer_layers",
+        getattr(model, "private_ane_max_transformer_layers", None),
+    )
+    if max_layers in (None, "", 0, "0"):
+        active_layers = layer_count
+    else:
+        active_layers = min(layer_count, max(0, int(max_layers)))
+    requested = max(0, active_layers * 2)
+    max_auto_value = config.inference.get(
+        "private_ane_auto_transformer_cache_max_segments",
+        getattr(model, "private_ane_auto_transformer_cache_max_segments", 0),
+    )
+    max_auto = 0 if max_auto_value in (None, "", 0, "0") else int(max_auto_value)
+    if max_auto is None or max_auto < 1:
+        return 0, "auto_disabled_max_segments_zero", {
+            "enabled": False,
+            "batch_count": int(batch_count),
+            "requested": int(requested),
+            "selected": 0,
+            "max": 0,
+            "allow_transformer_handle_cache": bool(allow_handle_cache),
+            "reason": "max_segments_zero",
+        }
+    selected = min(requested, int(max_auto))
+    auto = {
+        "enabled": True,
+        "batch_count": int(batch_count),
+        "requested": int(requested),
+        "selected": int(selected),
+        "max": int(max_auto),
+        "allow_transformer_handle_cache": bool(allow_handle_cache),
+    }
+    if batch_count <= 1 or selected <= 0:
+        auto["reason"] = "single_batch" if batch_count <= 1 else "no_active_layers"
+        auto["selected"] = 0
+        return 0, "auto_not_needed", auto
+
+    min_free = _private_ane_optional_int(
+        config.inference.get(
+            "private_ane_auto_transformer_cache_min_free_memory_percent",
+            getattr(model, "private_ane_auto_transformer_cache_min_free_memory_percent", 55),
+        ),
+        55,
+    )
+    free_percent = _system_free_memory_percent() if min_free is not None else None
+    auto["free_memory_percent"] = free_percent
+    auto["min_free_memory_percent"] = int(min_free) if min_free is not None else None
+    if min_free is not None and (free_percent is None or free_percent < min_free):
+        auto["reason"] = "memory_limited"
+        auto["selected"] = 0
+        return 0, "auto_memory_limited", auto
+    auto["reason"] = "selected"
+    return selected, "auto", auto
 
 
 def _init_overlap_buffers(config, mix, device, use_fast_path, source_indices=None):
@@ -510,6 +830,951 @@ def _can_demix_mlx_full(model, device):
     )
 
 
+def _can_demix_coreml_ane_segmented(model, device):
+    return (
+        getattr(model, "mps_model_backend", None) == "coreml_ane_segmented"
+        and hasattr(model, "coreml_ane_compute_unit")
+    )
+
+
+def _can_demix_private_ane(model, device):
+    return getattr(model, "mps_model_backend", None) == "private_ane"
+
+
+def demix_track_coreml_ane_segmented(config, model, mix, device, pbar=False, source_indices=None, progress_callback=None):
+    from .modules.bs_roformer.common import istft_roformer, stft_roformer
+    from .modules.bs_roformer.coreml_ane import coreml_ane_forward_mask_core
+
+    C = int(config.audio.chunk_size)
+    source_indices = _normalize_source_indices(config, source_indices)
+    step = _get_inference_step(config, C)
+    border = C - step
+    fade_size = min(C // 10, border)
+
+    mix = torch.as_tensor(mix, dtype=torch.float32)
+    mix, length_init = _prepare_mix_for_chunks(mix, border)
+    starts, windows = _build_chunk_plan(mix.shape[1], C, step, fade_size)
+    progress = _ProgressContext(pbar, mix.shape[1], progress_callback)
+
+    if not starts:
+        progress.close()
+        progress.emit(mix.shape[1])
+        empty = np.zeros((_source_count(config, source_indices), mix.shape[0], 0), dtype=np.float32)
+        return _sources_to_dict(config, empty, source_indices)
+
+    chunk_parts = []
+    chunk_lengths = []
+    for start in starts:
+        chunk, length = _extract_chunk(mix, start, C)
+        chunk_parts.append(chunk)
+        chunk_lengths.append(length)
+
+    with torch.inference_mode():
+        with _model_source_context(model, source_indices):
+            batch = torch.stack(chunk_parts, dim=0).float()
+            stft_repr, context = stft_roformer(model, batch)
+            mask = coreml_ane_forward_mask_core(model, stft_repr)
+            stft_complex = torch.view_as_complex(stft_repr.unsqueeze(1).contiguous())
+            mask_complex = torch.view_as_complex(mask.contiguous()).type(stft_complex.dtype)
+            chunks = istft_roformer(model, stft_complex * mask_complex, context, context.audio_length).float()
+            if chunks.ndim == 3:
+                chunks = chunks.unsqueeze(1)
+            chunks = _select_sources(chunks.cpu(), source_indices)
+
+    result = torch.zeros((_source_count(config, source_indices), mix.shape[0], mix.shape[1]), dtype=torch.float32)
+    counter = torch.zeros((1, 1, mix.shape[1]), dtype=torch.float32)
+    for chunk, window, start, length in zip(chunks, windows, starts, chunk_lengths, strict=True):
+        _add_weighted_chunk(result, counter, chunk, window, start, length)
+        progress.update(step)
+
+    progress.close()
+    progress.emit(mix.shape[1])
+    return _sources_to_dict(config, _finalize_overlap(result, counter, length_init, border), source_indices)
+
+
+def demix_track_private_ane(config, model, mix, device, pbar=False, source_indices=None, progress_callback=None):
+    from .modules.bs_roformer.common import istft_roformer, stft_roformer
+    from .modules.bs_roformer.private_ane import (
+        _runner,
+        private_ane_forward_mask_core_batch_layerwise,
+        private_ane_istft_roformer,
+        private_ane_stft_roformer,
+    )
+
+    C = int(config.audio.chunk_size)
+    source_indices = _normalize_source_indices(config, source_indices)
+    step = _get_inference_step(config, C)
+    border = C - step
+    fade_size = min(C // 10, border)
+
+    mix = torch.as_tensor(mix, dtype=torch.float32)
+    mix, length_init = _prepare_mix_for_chunks(mix, border)
+    starts, windows = _build_chunk_plan(mix.shape[1], C, step, fade_size)
+    progress = _ProgressContext(pbar, mix.shape[1], progress_callback)
+
+    if not starts:
+        progress.close()
+        progress.emit(mix.shape[1])
+        empty = np.zeros((_source_count(config, source_indices), mix.shape[0], 0), dtype=np.float32)
+        return _sources_to_dict(config, empty, source_indices)
+
+    max_chunks = config.inference.get("private_ane_max_chunks", 1)
+    max_chunks = None if max_chunks in (None, "", 0, "0") else int(max_chunks)
+    allow_long_audio = _private_ane_bool_config(config.inference.get("private_ane_allow_long_audio", False))
+    if max_chunks is not None and len(starts) > max_chunks and not allow_long_audio:
+        raise RuntimeError(
+            "private_ane refused to run a long input by default: "
+            f"{len(starts)} chunks > private_ane_max_chunks={max_chunks}. "
+            "Pass private_ane_allow_long_audio=True only after a short smoke test is stable."
+        )
+    defer_istft_until_after_masks = _private_ane_bool_config(
+        config.inference.get("private_ane_defer_istft_until_after_masks", False)
+    )
+
+    chunk_batch_size, chunk_batch_size_mode, chunk_batch_auto = _resolve_private_ane_chunk_batch_size(
+        config,
+        len(starts),
+        max_chunks,
+    )
+    transformer_cache_segments, transformer_cache_segments_mode, transformer_cache_auto = (
+        _resolve_private_ane_transformer_cache_segments(config, model, len(starts), chunk_batch_size)
+    )
+    transformer_timing_tail_limit = config.inference.get(
+        "private_ane_transformer_timing_tail",
+        PRIVATE_ANE_TRANSFORMER_TIMING_TAIL,
+    )
+    transformer_timing_tail_limit = (
+        None if transformer_timing_tail_limit in (None, "", 0, "0")
+        else int(transformer_timing_tail_limit)
+    )
+    if transformer_timing_tail_limit is not None and transformer_timing_tail_limit < 1:
+        raise ValueError("private_ane_transformer_timing_tail must be >= 1, or 0 to keep all timings")
+    max_rss_mb = config.inference.get("private_ane_max_rss_mb", 1792)
+    max_rss_mb = None if max_rss_mb in (None, "", 0, "0") else float(max_rss_mb)
+    min_free_memory_percent = config.inference.get(
+        "private_ane_min_free_memory_percent",
+        PRIVATE_ANE_MIN_FREE_MEMORY_PERCENT,
+    )
+    min_free_memory_percent = (
+        None if min_free_memory_percent in (None, "", 0, "0") else int(min_free_memory_percent)
+    )
+    if (
+            min_free_memory_percent is not None
+            and min_free_memory_percent < PRIVATE_ANE_MIN_ALLOWED_FREE_MEMORY_PERCENT
+    ):
+        raise ValueError(
+            "inference.private_ane_min_free_memory_percent must be >= "
+            f"{PRIVATE_ANE_MIN_ALLOWED_FREE_MEMORY_PERCENT}, or 0 to disable the soft guard"
+        )
+    emergency_free_memory_percent = config.inference.get(
+        "private_ane_emergency_free_memory_percent",
+        PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT,
+    )
+    emergency_free_memory_percent = (
+        None if emergency_free_memory_percent in (None, "", 0, "0") else int(emergency_free_memory_percent)
+    )
+    if (
+            emergency_free_memory_percent is not None
+            and emergency_free_memory_percent < PRIVATE_ANE_MIN_ALLOWED_EMERGENCY_FREE_MEMORY_PERCENT
+    ):
+        raise ValueError(
+            "inference.private_ane_emergency_free_memory_percent must be >= "
+            f"{PRIVATE_ANE_MIN_ALLOWED_EMERGENCY_FREE_MEMORY_PERCENT}, or 0 to disable"
+        )
+    max_ane_service_rss_mb = config.inference.get("private_ane_max_ane_service_rss_mb", 512)
+    max_ane_service_rss_mb = (
+        None if max_ane_service_rss_mb in (None, "", 0, "0") else float(max_ane_service_rss_mb)
+    )
+    max_swap_used_mb = config.inference.get("private_ane_max_swap_used_mb", PRIVATE_ANE_MAX_SWAP_USED_MB)
+    max_swap_used_mb = None if max_swap_used_mb in (None, "", 0, "0") else float(max_swap_used_mb)
+    if (
+            max_swap_used_mb is not None
+            and (max_swap_used_mb < 0 or max_swap_used_mb > PRIVATE_ANE_MAX_ALLOWED_SWAP_USED_MB)
+    ):
+        raise ValueError(
+            "inference.private_ane_max_swap_used_mb must be <= "
+            f"{PRIVATE_ANE_MAX_ALLOWED_SWAP_USED_MB}, or 0 to disable"
+        )
+    free_memory_strikes_limit = int(
+        config.inference.get("private_ane_free_memory_strikes", PRIVATE_ANE_FREE_MEMORY_STRIKES)
+        or PRIVATE_ANE_FREE_MEMORY_STRIKES
+    )
+    if free_memory_strikes_limit < 1:
+        raise ValueError("inference.private_ane_free_memory_strikes must be >= 1")
+    low_free_memory_strikes = 0
+    memory_samples = deque(maxlen=PRIVATE_ANE_MEMORY_TAIL_SAMPLES)
+    memory_sample_count = 0
+    max_observed_rss_mb = None
+    min_observed_free_memory_percent = None
+    max_observed_ane_service_rss_mb = None
+    max_observed_swap_used_mb = None
+
+    def _runner_cache_counts(runner):
+        if runner is None or not hasattr(runner, "cache_handle_counts"):
+            return None
+        try:
+            return dict(runner.cache_handle_counts())
+        except Exception:
+            return None
+
+    def sample_memory(label, batch_index, extra=None):
+        nonlocal low_free_memory_strikes
+        nonlocal memory_sample_count
+        nonlocal max_observed_rss_mb
+        nonlocal min_observed_free_memory_percent
+        nonlocal max_observed_ane_service_rss_mb
+        nonlocal max_observed_swap_used_mb
+        sample = {"label": label, "batch": int(batch_index)}
+        if isinstance(extra, dict):
+            for key, value in extra.items():
+                if value is not None:
+                    sample[key] = value
+        rss_mb = _current_rss_mb()
+        free_percent = _system_free_memory_percent()
+        ane_service_rss_mb = _ane_service_rss_mb()
+        swap_used_mb = _system_swap_used_mb()
+        if rss_mb is not None:
+            sample["rss_mb"] = float(rss_mb)
+            max_observed_rss_mb = (
+                float(rss_mb)
+                if max_observed_rss_mb is None
+                else max(max_observed_rss_mb, float(rss_mb))
+            )
+        if free_percent is not None:
+            sample["free_memory_percent"] = int(free_percent)
+            min_observed_free_memory_percent = (
+                int(free_percent)
+                if min_observed_free_memory_percent is None
+                else min(min_observed_free_memory_percent, int(free_percent))
+            )
+        if ane_service_rss_mb is not None:
+            sample["ane_service_rss_mb"] = float(ane_service_rss_mb)
+            max_observed_ane_service_rss_mb = (
+                float(ane_service_rss_mb)
+                if max_observed_ane_service_rss_mb is None
+                else max(max_observed_ane_service_rss_mb, float(ane_service_rss_mb))
+            )
+        if swap_used_mb is not None:
+            sample["swap_used_mb"] = float(swap_used_mb)
+            max_observed_swap_used_mb = (
+                float(swap_used_mb)
+                if max_observed_swap_used_mb is None
+                else max(max_observed_swap_used_mb, float(swap_used_mb))
+            )
+        memory_sample_count += 1
+        memory_samples.append(sample)
+        if max_rss_mb is not None and rss_mb is not None and rss_mb > max_rss_mb:
+            raise MemoryError(
+                f"private_ane RSS exceeded limit: {rss_mb:.1f} MB > {max_rss_mb:.1f} MB"
+            )
+        if (
+                emergency_free_memory_percent is not None
+                and free_percent is not None
+                and free_percent < emergency_free_memory_percent
+        ):
+            raise MemoryError(
+                "private_ane stopped because system memory is below the emergency floor: "
+                f"{free_percent}% < {emergency_free_memory_percent}% at {label}"
+            )
+        if (
+                max_ane_service_rss_mb is not None
+                and ane_service_rss_mb is not None
+                and ane_service_rss_mb > max_ane_service_rss_mb
+        ):
+            raise MemoryError(
+                "private_ane ANE service RSS exceeded limit: "
+                f"{ane_service_rss_mb:.1f} MB > {max_ane_service_rss_mb:.1f} MB"
+            )
+        if max_swap_used_mb is not None and swap_used_mb is not None and swap_used_mb > max_swap_used_mb:
+            raise MemoryError(
+                "private_ane stopped because system swap usage is high: "
+                f"{swap_used_mb:.1f} MB > {max_swap_used_mb:.1f} MB at {label}"
+            )
+        if (
+            min_free_memory_percent is not None
+            and free_percent is not None
+            and free_percent < min_free_memory_percent
+        ):
+            low_free_memory_strikes += 1
+            if low_free_memory_strikes >= free_memory_strikes_limit:
+                raise MemoryError(
+                    "private_ane stopped because system free memory is low: "
+                    f"{free_percent}% < {min_free_memory_percent}% "
+                    f"for {low_free_memory_strikes} consecutive samples"
+                )
+        else:
+            low_free_memory_strikes = 0
+
+    sample_memory("before_result_allocation", 0)
+    result = torch.zeros((_source_count(config, source_indices), mix.shape[0], mix.shape[1]), dtype=torch.float32)
+    counter = torch.zeros((1, 1, mix.shape[1]), dtype=torch.float32)
+
+    original_transformer_cache_segments = getattr(model, "private_ane_transformer_cache_segments", 0)
+    model.private_ane_transformer_cache_segments = transformer_cache_segments
+    try:
+        with _private_ane_runner_cleanup(model), torch.inference_mode(), _model_source_context(model, source_indices):
+            private_ane_batch_summaries = []
+            private_ane_stft_summaries = []
+            private_ane_istft_summaries = []
+            pending_istft_items = []
+            cache_release_events = []
+            stft_preload_timing = None
+            stft_cache_releases = 0
+            irfft_cache_releases = 0
+            aux_cache_releases = 0
+            batch_cache_releases = 0
+            transformer_cache_releases = 0
+
+            def runner_preserves_aux_handles(runner) -> bool:
+                if runner is None or not hasattr(runner, "preserve_aux_handles_between_batches"):
+                    return False
+                return bool(runner.preserve_aux_handles_between_batches())
+
+            def runner_preserves_stft_handles(runner) -> bool:
+                if runner is None or not hasattr(runner, "preserve_stft_handles_between_batches"):
+                    return False
+                return bool(runner.preserve_stft_handles_between_batches())
+
+            def should_release_non_transformer_handles(cache_handles, preserve_aux_handles, preserve_stft_handles):
+                stale_aux = int(cache_handles.get("aux_handles", 0) or 0)
+                stale_stft = int(cache_handles.get("stft_handles", 0) or 0)
+                stale_irfft = int(cache_handles.get("irfft_handles", 0) or 0)
+                return (
+                    stale_irfft > 0
+                    or (stale_stft > 0 and not preserve_stft_handles)
+                    or (stale_aux > 0 and not preserve_aux_handles)
+                )
+
+            def release_runner_cache(label, batch_index, method_name, context=None, method_kwargs=None):
+                runner = getattr(model, "_private_ane_runner", None)
+                if runner is None or not hasattr(runner, method_name):
+                    return None
+                method_kwargs = dict(method_kwargs or {})
+                before = _runner_cache_counts(runner)
+                trace_context = dict(context or {})
+                trace_context.pop("batch", None)
+                _private_ane_trace_event(
+                    "cache_release_start",
+                    label=label,
+                    batch=int(batch_index),
+                    method=method_name,
+                    cache_handles=before,
+                    **trace_context,
+                )
+                release_method = getattr(runner, method_name)
+                release_started = time.perf_counter()
+                release_summary = release_method(**method_kwargs)
+                release_wall_sec = time.perf_counter() - release_started
+                if not isinstance(release_summary, dict):
+                    after = _runner_cache_counts(runner)
+                    released = {}
+                    if before is not None and after is not None:
+                        released = {
+                            key: max(0, int(value) - int(after.get(key, 0)))
+                            for key, value in before.items()
+                        }
+                    release_summary = {
+                        "before": before,
+                        "after": after,
+                        "released": released,
+                        "released_total_handles": int(released.get("total_handles", 0)),
+                    }
+                if method_kwargs:
+                    release_summary["method_kwargs"] = method_kwargs
+                release_summary["wall_sec"] = float(release_wall_sec)
+                event = {
+                    "label": label,
+                    "batch": int(batch_index),
+                    "method": method_name,
+                    "summary": release_summary,
+                }
+                if isinstance(context, dict):
+                    for key, value in context.items():
+                        if value is not None:
+                            event[key] = value
+                cache_release_events.append(event)
+                sample_extra = dict(context or {})
+                sample_extra["cache_handles"] = release_summary.get("after")
+                sample_extra["cache_release"] = release_summary.get("released")
+                sample_extra["cache_release_method"] = method_name
+                sample_memory(f"after_{label}", batch_index, sample_extra)
+                _private_ane_trace_event(
+                    "cache_release_done",
+                    label=label,
+                    batch=int(batch_index),
+                    method=method_name,
+                    cache_handles=release_summary.get("after"),
+                    released=release_summary.get("released"),
+                    wall_sec=float(release_wall_sec),
+                    **trace_context,
+                )
+                return release_summary
+
+            sample_memory("start", 0)
+            _private_ane_trace_event(
+                "demix_start",
+                chunks=len(starts),
+                chunk_batch_size=int(chunk_batch_size),
+                transformer_cache_segments=int(transformer_cache_segments or 0),
+                transformer_cache_segments_mode=transformer_cache_segments_mode,
+            )
+            if _private_ane_bool_config_or_model(config, model, "private_ane_preload_stft_handles", False):
+                runner = _runner(model)
+                _private_ane_trace_event("stft_preload_start", cache_handles=_runner_cache_counts(runner))
+                preload_started = time.perf_counter()
+                stft_preload_timing = runner.preload_stft_handles()
+                stft_preload_timing["wall_sec"] = float(time.perf_counter() - preload_started)
+                preload_context = {"cache_handles": _runner_cache_counts(runner)}
+                sample_memory("after_stft_preload", 0, preload_context)
+                _private_ane_trace_event(
+                    "stft_preload_done",
+                    cache_handles=preload_context["cache_handles"],
+                    **stft_preload_timing,
+                )
+            for batch_start in range(0, len(starts), chunk_batch_size):
+                batch_index = batch_start // chunk_batch_size
+                batch_end = min(batch_start + chunk_batch_size, len(starts))
+                batch_chunk_indices = list(range(batch_start, batch_end))
+                batch_chunk_starts = [int(starts[idx]) for idx in batch_chunk_indices]
+                batch_context = {
+                    "batch": int(batch_index),
+                    "batch_start": int(batch_start),
+                    "batch_end": int(batch_end),
+                    "batch_chunk_indices": [int(idx) for idx in batch_chunk_indices],
+                    "batch_chunk_starts": batch_chunk_starts,
+                    "batch_chunk_count": int(batch_end - batch_start),
+                }
+                _private_ane_trace_event("batch_start", **batch_context)
+                runner = getattr(model, "_private_ane_runner", None)
+                if runner is not None:
+                    runner.memory_context = dict(batch_context)
+                    cache_handles = _runner_cache_counts(runner)
+                    if cache_handles is not None:
+                        stale_non_transformer = int(cache_handles.get("non_transformer_handles", 0) or 0)
+                        stale_transformer = int(cache_handles.get("transformer_handles", 0) or 0)
+                        preserve_aux_handles = runner_preserves_aux_handles(runner)
+                        preserve_stft_handles = runner_preserves_stft_handles(runner)
+                        should_release_non_transformer = stale_non_transformer > 0 and should_release_non_transformer_handles(
+                            cache_handles,
+                            preserve_aux_handles,
+                            preserve_stft_handles,
+                        )
+                        if should_release_non_transformer or (
+                                stale_transformer > 0
+                                and transformer_cache_segments_mode != "explicit"
+                        ):
+                            release_method = (
+                                "clear_cache"
+                                if stale_transformer > 0 and transformer_cache_segments_mode != "explicit"
+                                else "clear_non_transformer_cache"
+                            )
+                            if hasattr(runner, release_method):
+                                release_kwargs = {}
+                                if release_method in ("clear_cache", "clear_non_transformer_cache"):
+                                    release_kwargs["preserve_aux_handles"] = preserve_aux_handles
+                                    release_kwargs["preserve_stft_handles"] = preserve_stft_handles
+                                release_runner_cache(
+                                    "pre_batch_stale_cache_release",
+                                    batch_index,
+                                    release_method,
+                                    batch_context,
+                                    release_kwargs,
+                                )
+                batch_sample_context = dict(batch_context)
+                cache_handles = _runner_cache_counts(runner)
+                if cache_handles is not None:
+                    batch_sample_context["cache_handles"] = cache_handles
+                sample_memory("before_batch", batch_index, batch_sample_context)
+                stft_items = []
+                for idx in range(batch_start, batch_end):
+                    chunk, length = _extract_chunk(mix, starts[idx], C)
+                    stft_started = time.perf_counter()
+                    _private_ane_trace_event(
+                        "stft_start",
+                        batch=int(batch_index),
+                        chunk_index=int(idx),
+                        chunk_start=int(starts[idx]),
+                        chunk_valid_length=int(length),
+                    )
+                    stft_repr, context = private_ane_stft_roformer(model, chunk)
+                    _private_ane_trace_event(
+                        "stft_done",
+                        batch=int(batch_index),
+                        chunk_index=int(idx),
+                        wall_sec=float(time.perf_counter() - stft_started),
+                    )
+                    stft_summary = getattr(model, "_pymss_private_ane_last_stft", {}) or {}
+                    stft_summary = dict(stft_summary)
+                    stft_summary["wall_sec"] = float(time.perf_counter() - stft_started)
+                    private_ane_stft_summaries.append(stft_summary)
+                    stft_items.append((stft_repr, context, windows[idx], starts[idx], length))
+                    del chunk
+
+                runner = getattr(model, "_private_ane_runner", None)
+                cache_handles = _runner_cache_counts(runner) or {}
+                if (
+                        runner is not None
+                        and hasattr(runner, "clear_stft_cache")
+                        and not runner_preserves_stft_handles(runner)
+                        and int(cache_handles.get("stft_handles", 0) or 0) > 0
+                ):
+                    release_runner_cache("stft_cache_release", batch_index, "clear_stft_cache", batch_context)
+                    stft_cache_releases += 1
+
+                _private_ane_trace_event("mask_batch_start", **batch_context)
+                masks = private_ane_forward_mask_core_batch_layerwise(model, [item[0] for item in stft_items])
+                _private_ane_trace_event(
+                    "mask_batch_done",
+                    cache_handles=_runner_cache_counts(getattr(model, "_private_ane_runner", None)),
+                    **batch_context,
+                )
+                batch_summary = dict(getattr(model, "_pymss_private_ane_last_summary", {}) or {})
+                for sample in batch_summary.get("memory_samples") or ():
+                    sample = dict(sample)
+                    for key, value in batch_context.items():
+                        sample.setdefault(key, value)
+                    memory_samples.append(sample)
+                batch_summary.pop("memory_samples", None)
+                private_ane_batch_summaries.append(batch_summary)
+                if defer_istft_until_after_masks:
+                    pending_istft_items.extend(
+                        (mask, stft_item)
+                        for mask, stft_item in zip(masks, stft_items, strict=True)
+                    )
+                    sample_memory("after_deferred_mask_batch", batch_index)
+                else:
+                    if _private_ane_bool_config(config.inference.get("private_ane_release_aux_handles_before_istft", True)):
+                        runner = getattr(model, "_private_ane_runner", None)
+                        cache_handles = _runner_cache_counts(runner) or {}
+                        if (
+                                runner is not None
+                                and hasattr(runner, "clear_aux_handle_cache")
+                                and int(cache_handles.get("aux_handles", 0) or 0) > 0
+                        ):
+                            release_runner_cache(
+                                "aux_cache_release_before_istft",
+                                batch_index,
+                                "clear_aux_handle_cache",
+                                batch_context,
+                            )
+                            aux_cache_releases += 1
+                    for mask, (stft_repr, context, window, start, length) in zip(masks, stft_items, strict=True):
+                        _private_ane_trace_event(
+                            "istft_start",
+                            batch=int(batch_index),
+                            chunk_start=int(start),
+                            chunk_valid_length=int(length),
+                        )
+                        stft_complex = torch.view_as_complex(stft_repr.unsqueeze(1).contiguous())
+                        mask_complex = torch.view_as_complex(mask.contiguous()).type(stft_complex.dtype)
+                        istft_started = time.perf_counter()
+                        output = private_ane_istft_roformer(model, stft_complex * mask_complex, context, context.audio_length).float()
+                        _private_ane_trace_event(
+                            "istft_done",
+                            batch=int(batch_index),
+                            chunk_start=int(start),
+                            wall_sec=float(time.perf_counter() - istft_started),
+                        )
+                        istft_summary = getattr(model, "_pymss_private_ane_last_istft", {}) or {}
+                        istft_summary = dict(istft_summary)
+                        istft_summary["wall_sec"] = float(time.perf_counter() - istft_started)
+                        private_ane_istft_summaries.append(istft_summary)
+                        if output.ndim == 3:
+                            output = output.unsqueeze(1)
+                        output = _select_sources(output.cpu(), source_indices)
+                        _add_weighted_chunk(result, counter, output[0], window, start, length)
+                        progress.update(step)
+                        del mask, stft_repr, context, stft_complex, mask_complex, output
+
+                    runner = getattr(model, "_private_ane_runner", None)
+                    cache_handles = _runner_cache_counts(runner) or {}
+                    if (
+                            runner is not None
+                            and hasattr(runner, "clear_irfft_cache")
+                            and int(cache_handles.get("irfft_handles", 0) or 0) > 0
+                    ):
+                        release_runner_cache("irfft_cache_release", batch_index, "clear_irfft_cache", batch_context)
+                        irfft_cache_releases += 1
+
+                del masks, stft_items
+                batch_memory_release = _release_private_ane_batch_memory()
+                cache_release_events.append({
+                    "label": "release_private_ane_batch_memory",
+                    "batch": int(batch_index),
+                    "method": "_release_private_ane_batch_memory",
+                    "summary": batch_memory_release,
+                    **batch_context,
+                })
+                _private_ane_trace_event(
+                    "release_private_ane_batch_memory_done",
+                    wall_sec=batch_memory_release.get("wall_sec"),
+                    gc_sec=batch_memory_release.get("gc_sec"),
+                    mps_empty_cache_sec=batch_memory_release.get("mps_empty_cache_sec"),
+                    **batch_context,
+                )
+                runner = getattr(model, "_private_ane_runner", None)
+                clear_transformer_after_batch = (
+                    transformer_cache_segments > 0
+                    and transformer_cache_segments_mode != "explicit"
+                )
+                if runner is not None:
+                    cache_handles = _runner_cache_counts(runner) or {}
+                    preserve_aux_handles = runner_preserves_aux_handles(runner)
+                    preserve_stft_handles = runner_preserves_stft_handles(runner)
+                    clear_non_transformer_after_batch = should_release_non_transformer_handles(
+                        cache_handles,
+                        preserve_aux_handles,
+                        preserve_stft_handles,
+                    )
+                    release_method = (
+                        "clear_cache" if clear_transformer_after_batch else "clear_non_transformer_cache"
+                    )
+                    if (clear_transformer_after_batch or clear_non_transformer_after_batch) and hasattr(runner, release_method):
+                        release_kwargs = {}
+                        if release_method in ("clear_cache", "clear_non_transformer_cache"):
+                            release_kwargs["preserve_aux_handles"] = preserve_aux_handles
+                            release_kwargs["preserve_stft_handles"] = preserve_stft_handles
+                        release_runner_cache(
+                            "batch_cache_release",
+                            batch_index,
+                            release_method,
+                            batch_context,
+                            release_kwargs,
+                        )
+                        batch_cache_releases += 1
+                        if clear_transformer_after_batch:
+                            transformer_cache_releases += 1
+                    after_batch_context = dict(batch_context)
+                    cache_handles = _runner_cache_counts(runner)
+                    if cache_handles is not None:
+                        after_batch_context["cache_handles"] = cache_handles
+                    sample_memory("after_batch", batch_index, after_batch_context)
+                else:
+                    sample_memory("after_batch", batch_index, batch_context)
+                if runner is not None:
+                    runner.memory_context = {}
+                _private_ane_trace_event(
+                    "batch_done",
+                    cache_handles=_runner_cache_counts(runner),
+                    **batch_context,
+                )
+
+            if defer_istft_until_after_masks:
+                if _private_ane_bool_config(config.inference.get("private_ane_release_aux_handles_before_istft", True)):
+                    runner = getattr(model, "_private_ane_runner", None)
+                    if runner is not None and hasattr(runner, "clear_aux_handle_cache"):
+                        release_runner_cache(
+                            "deferred_aux_cache_release",
+                            0,
+                            "clear_aux_handle_cache",
+                            {"deferred_istft": True},
+                        )
+                        aux_cache_releases += 1
+                for pending_index, (mask, (stft_repr, context, window, start, length)) in enumerate(pending_istft_items):
+                    _private_ane_trace_event(
+                        "deferred_istft_start",
+                        pending_index=int(pending_index),
+                        chunk_start=int(start),
+                        chunk_valid_length=int(length),
+                    )
+                    stft_complex = torch.view_as_complex(stft_repr.unsqueeze(1).contiguous())
+                    mask_complex = torch.view_as_complex(mask.contiguous()).type(stft_complex.dtype)
+                    istft_started = time.perf_counter()
+                    output = private_ane_istft_roformer(model, stft_complex * mask_complex, context, context.audio_length).float()
+                    _private_ane_trace_event(
+                        "deferred_istft_done",
+                        pending_index=int(pending_index),
+                        chunk_start=int(start),
+                        wall_sec=float(time.perf_counter() - istft_started),
+                    )
+                    istft_summary = getattr(model, "_pymss_private_ane_last_istft", {}) or {}
+                    istft_summary = dict(istft_summary)
+                    istft_summary["wall_sec"] = float(time.perf_counter() - istft_started)
+                    private_ane_istft_summaries.append(istft_summary)
+                    if output.ndim == 3:
+                        output = output.unsqueeze(1)
+                    output = _select_sources(output.cpu(), source_indices)
+                    _add_weighted_chunk(result, counter, output[0], window, start, length)
+                    progress.update(step)
+                    runner = getattr(model, "_private_ane_runner", None)
+                    if runner is not None and hasattr(runner, "clear_irfft_cache"):
+                        release_runner_cache(
+                            "deferred_irfft_cache_release",
+                            pending_index,
+                            "clear_irfft_cache",
+                            {"deferred_istft": True, "pending_index": int(pending_index)},
+                        )
+                        irfft_cache_releases += 1
+                    del mask, stft_repr, context, stft_complex, mask_complex, output
+                    batch_memory_release = _release_private_ane_batch_memory()
+                    cache_release_events.append({
+                        "label": "deferred_release_private_ane_batch_memory",
+                        "batch": int(pending_index),
+                        "method": "_release_private_ane_batch_memory",
+                        "summary": batch_memory_release,
+                        "deferred_istft": True,
+                        "pending_index": int(pending_index),
+                    })
+                    _private_ane_trace_event(
+                        "deferred_release_private_ane_batch_memory_done",
+                        pending_index=int(pending_index),
+                        wall_sec=batch_memory_release.get("wall_sec"),
+                        gc_sec=batch_memory_release.get("gc_sec"),
+                        mps_empty_cache_sec=batch_memory_release.get("mps_empty_cache_sec"),
+                    )
+                pending_istft_items.clear()
+
+            if private_ane_batch_summaries:
+                stage_metadata_keys = {
+                    "tile_seq",
+                    "out_tile",
+                    "frame_tile",
+                    "frames",
+                    "stage",
+                    "batch_channels",
+                    "input_target_max",
+                    "input_prescale",
+                    "rmsnorm",
+                    "fused",
+                    "fused_layout",
+                    "fused_groups",
+                    "fused_max_outputs",
+                    "dynamic_groups",
+                    "dynamic_out_ch",
+                    "dynamic_computed_out_ch",
+                    "dynamic_zero_rows",
+                    "dynamic_compact_rows",
+                    "max_outputs_per_group",
+                    "outputs",
+                    "hot_gc_interval",
+                    "guard_interval",
+                }
+
+                def sum_stage(stage_name):
+                    total = {}
+                    for summary in private_ane_batch_summaries:
+                        stage = summary.get(stage_name) or {}
+                        for key, value in stage.items():
+                            if key in stage_metadata_keys or isinstance(value, bool):
+                                total[key] = value
+                            elif isinstance(value, (int, float)):
+                                total[key] = float(total.get(key, 0.0) or 0.0) + float(value)
+                            else:
+                                total[key] = value
+                    return total
+
+                def sum_stage_items(items):
+                    total = {}
+                    for stage in items:
+                        for key, value in dict(stage or {}).items():
+                            if key in stage_metadata_keys or isinstance(value, bool):
+                                total[key] = value
+                            elif isinstance(value, (int, float)):
+                                total[key] = float(total.get(key, 0.0) or 0.0) + float(value)
+                            else:
+                                total[key] = value
+                    return total
+
+                band_split = sum_stage("band_split")
+                final_norm = sum_stage("final_norm")
+                mask = sum_stage("mask")
+                mask_batch_detail = sum_stage("mask_batch_detail")
+                transformer_detail = sum_stage("transformer_detail")
+                stft = sum_stage_items(private_ane_stft_summaries)
+                istft = sum_stage_items(private_ane_istft_summaries)
+                transformer_compile_sec = 0.0
+                transformer_eval_sec = 0.0
+                transformer_cache_hits = 0
+                transformer_cache_kept = 0
+                bridge_load_cache_hits = 0
+                bridge_load_cache_misses = 0
+                bridge_load_cache_enabled = False
+                transformer_profile_skip_keys = {"layer", "eval_sec"}
+                transformer_by_axis = {}
+                transformer_timings_tail = deque(maxlen=transformer_timing_tail_limit)
+                transformer_timing_count = 0
+                for batch_summary_index, summary in enumerate(private_ane_batch_summaries):
+                    bridge_cache = summary.get("bridge_load_cache") or {}
+                    bridge_load_cache_enabled = bridge_load_cache_enabled or bool(bridge_cache.get("enabled"))
+                    bridge_load_cache_hits += int(bridge_cache.get("hits", 0) or 0)
+                    bridge_load_cache_misses += int(bridge_cache.get("misses", 0) or 0)
+                    for timing in summary.get("transformer_timings") or ():
+                        transformer_timing_count += 1
+                        timing_row = dict(timing)
+                        timing_row["batch_summary_index"] = int(batch_summary_index)
+                        transformer_timings_tail.append(timing_row)
+                        axis = timing.get("axis", "unknown")
+                        axis_row = transformer_by_axis.setdefault(
+                            axis,
+                            {"compile_sec": 0.0, "eval_sec": 0.0, "segments": 0, "cache_hits": 0, "cache_kept": 0},
+                        )
+                        compile_sec = float(timing.get("compile_wall_sec", 0.0) or 0.0)
+                        eval_sec = float(timing.get("eval_sec", 0.0) or 0.0)
+                        transformer_compile_sec += compile_sec
+                        transformer_eval_sec += eval_sec
+                        axis_row["compile_sec"] += compile_sec
+                        axis_row["eval_sec"] += eval_sec
+                        axis_row["segments"] += 1
+                        if timing.get("cache_hit"):
+                            transformer_cache_hits += 1
+                            axis_row["cache_hits"] += 1
+                        if timing.get("cache_kept"):
+                            transformer_cache_kept += 1
+                            axis_row["cache_kept"] += 1
+                        for key, value in timing.items():
+                            if (
+                                key not in transformer_profile_skip_keys
+                                and isinstance(value, (int, float))
+                                and not isinstance(value, bool)
+                            ):
+                                axis_row[key] = axis_row.get(key, 0.0) + float(timing.get(key, 0.0) or 0.0)
+                memory_samples_tail = list(memory_samples)
+                runner = getattr(model, "_private_ane_runner", None)
+                final_cache_handles = _runner_cache_counts(runner)
+                cache_release_tail = cache_release_events[-PRIVATE_ANE_MEMORY_TAIL_SAMPLES:]
+                free_profile_by_family = dict(getattr(runner, "_free_profile_by_family", {}) or {}) if runner is not None else {}
+                model._pymss_private_ane_last_summary = {
+                    "transformer_sec": float(sum(float(s.get("transformer_sec", 0.0) or 0.0) for s in private_ane_batch_summaries)),
+                    "gelu_mode": getattr(model, "private_ane_gelu_mode", "EXACT"),
+                    "fuse_residual": bool(getattr(model, "private_ane_fuse_residual", True)),
+                    "fuse_gate_ffn": bool(getattr(model, "private_ane_fuse_gate_ffn", False)),
+                    "two_input_gate": bool(getattr(model, "private_ane_two_input_gate", False)),
+                    "bridge_pack_gate": bool(getattr(model, "private_ane_bridge_pack_gate", True)),
+                    "bridge_wrapper_route": _private_ane_bool_config(
+                        getattr(model, "private_ane_bridge_wrapper_route", False)
+                    ),
+                    "surface_handoff_gate_ffn": bool(
+                        getattr(model, "private_ane_surface_handoff_gate_ffn", False)
+                    ),
+                    "persistent_transformer_handles": _private_ane_bool_config(
+                        getattr(model, "private_ane_persistent_transformer_handles", False)
+                    ),
+                    "allow_transformer_handle_cache": _private_ane_bool_config(
+                        getattr(model, "private_ane_allow_transformer_handle_cache", False)
+                    ),
+                    "batch_axis_eval": _private_ane_bool_config(
+                        getattr(model, "private_ane_batch_axis_eval", False)
+                    ),
+                    "tiled_time_attention_pre": _private_ane_bool_config(
+                        getattr(model, "private_ane_tiled_time_attention_pre", False)
+                    ),
+                    "tiled_time_attention_pre_q_chunk": int(
+                        getattr(model, "private_ane_tiled_time_attention_pre_q_chunk", 128) or 128
+                    ),
+                    "torch_fallback_allowed": _private_ane_bool_config(
+                        getattr(model, "private_ane_allow_torch_fallback", False)
+                    ),
+                    "release_aux_handles_before_istft": _private_ane_bool_config(
+                        config.inference.get("private_ane_release_aux_handles_before_istft", True)
+                    ),
+                    "dynamic_stft": _private_ane_bool_config_or_model(
+                        config, model, "private_ane_dynamic_stft", False
+                    ),
+                    "dynamic_stft_max_outputs": int(
+                        _private_ane_config_or_model(
+                            config, model, "private_ane_dynamic_stft_max_outputs", 2048
+                        )
+                        or 2048
+                    ),
+                    "fused_stft": _private_ane_bool_config_or_model(
+                        config, model, "private_ane_fused_stft", False
+                    ),
+                    "fused_stft_max_outputs": int(
+                        _private_ane_config_or_model(
+                            config, model, "private_ane_fused_stft_max_outputs", 17
+                        )
+                        or 17
+                    ),
+                    "persistent_stft_handles": _private_ane_bool_config_or_model(
+                        config, model, "private_ane_persistent_stft_handles", False
+                    ),
+                    "preload_stft_handles": _private_ane_bool_config_or_model(
+                        config, model, "private_ane_preload_stft_handles", False
+                    ),
+                    "defer_istft_until_after_masks": bool(defer_istft_until_after_masks),
+                    "stft_cache_releases": int(stft_cache_releases),
+                    "irfft_cache_releases": int(irfft_cache_releases),
+                    "aux_cache_releases": int(aux_cache_releases),
+                    "batch_cache_releases": int(batch_cache_releases),
+                    "transformer_cache_releases": int(transformer_cache_releases),
+                    "cache_releases": {
+                        "event_count": int(len(cache_release_events)),
+                        "tail_count": int(len(cache_release_tail)),
+                        "events": cache_release_tail,
+                    },
+                    "free_profile_by_family": free_profile_by_family,
+                    "final_cache_handles": final_cache_handles,
+                    "stft_istft_batch_channels": _private_ane_bool_config_or_model(
+                        config, model, "private_ane_stft_istft_batch_channels", False
+                    ),
+                    "fused_band_split": bool(private_ane_batch_summaries[-1].get("fused_band_split", False)),
+                    "fused_mask_estimator": bool(
+                        private_ane_batch_summaries[-1].get("fused_mask_estimator", False)
+                    ),
+                    "gpu_final_norm_mask": bool(
+                        private_ane_batch_summaries[-1].get("gpu_final_norm_mask", False)
+                    ),
+                    "gpu_istft": _private_ane_bool_config(
+                        getattr(model, "private_ane_gpu_istft", False)
+                    ),
+                    "outer_stages": private_ane_batch_summaries[-1].get("outer_stages"),
+                    "schedule": "chunk_batches_layerwise_many",
+                    "chunks": len(starts),
+                    "chunk_batch_size": chunk_batch_size,
+                    "chunk_batch_size_mode": chunk_batch_size_mode,
+                    "chunk_batch_auto": chunk_batch_auto,
+                    "batches": len(private_ane_batch_summaries),
+                    "transformer_compile_sec": float(transformer_compile_sec),
+                    "transformer_eval_sec": float(transformer_eval_sec),
+                    "transformer_cache_hits": int(transformer_cache_hits),
+                    "transformer_cache_kept": int(transformer_cache_kept),
+                    "transformer_cache_segments": int(transformer_cache_segments or 0),
+                    "transformer_cache_segments_mode": transformer_cache_segments_mode,
+                    "transformer_cache_auto": transformer_cache_auto,
+                    "bridge_load_cache": {
+                        "enabled": bool(bridge_load_cache_enabled),
+                        "hits": int(bridge_load_cache_hits),
+                        "misses": int(bridge_load_cache_misses),
+                    },
+                    "transformer_by_axis": transformer_by_axis,
+                    "transformer_timings": list(transformer_timings_tail),
+                    "transformer_timing_count": int(transformer_timing_count),
+                    "transformer_timing_tail_count": len(transformer_timings_tail),
+                    "transformer_timing_tail_limit": transformer_timing_tail_limit,
+                    "band_split": band_split,
+                    "final_norm": final_norm,
+                    "mask": mask,
+                    "mask_batch_detail": mask_batch_detail,
+                    "transformer_detail": transformer_detail,
+                    "stft_preload": stft_preload_timing,
+                    "stft": stft,
+                    "istft": istft,
+                    "memory": {
+                        "max_rss_mb": max_observed_rss_mb,
+                        "min_free_memory_percent": min_observed_free_memory_percent,
+                        "max_ane_service_rss_mb": (
+                            max_observed_ane_service_rss_mb
+                        ),
+                        "max_swap_used_mb": max_observed_swap_used_mb,
+                        "samples": memory_samples_tail,
+                        "sample_count": memory_sample_count,
+                        "rss_limit_mb": max_rss_mb,
+                        "free_memory_percent_limit": min_free_memory_percent,
+                        "emergency_free_memory_percent": emergency_free_memory_percent,
+                        "free_memory_strikes_limit": free_memory_strikes_limit,
+                        "ane_service_rss_limit_mb": max_ane_service_rss_mb,
+                        "swap_used_limit_mb": max_swap_used_mb,
+                    },
+                }
+
+    finally:
+        model.private_ane_transformer_cache_segments = original_transformer_cache_segments
+
+    progress.close()
+    progress.emit(mix.shape[1])
+    return _sources_to_dict(config, _finalize_overlap(result, counter, length_init, border), source_indices)
+
+
 def demix_track_mlx_full(config, model, mix, device, pbar=False, source_indices=None, progress_callback=None):
     import mlx.core as mx
 
@@ -657,6 +1922,10 @@ def demix_track_demucs(config, model, mix, device, pbar=False, source_indices=No
     return _sources_to_dict(config, estimated_sources, source_indices)
 
 def demix(config, model, mix: NDArray, device, pbar=False, model_type: str = None, source_indices=None, progress_callback=None) -> Dict[str, NDArray]:
+    if _can_demix_private_ane(model, device):
+        return demix_track_private_ane(config, model, mix, device, pbar=pbar, source_indices=source_indices, progress_callback=progress_callback)
+    if _can_demix_coreml_ane_segmented(model, device):
+        return demix_track_coreml_ane_segmented(config, model, mix, device, pbar=pbar, source_indices=source_indices, progress_callback=progress_callback)
     if _can_demix_mlx_full(model, device):
         return demix_track_mlx_full(config, model, mix, device, pbar=pbar, source_indices=source_indices, progress_callback=progress_callback)
     mix = torch.tensor(mix, dtype=torch.float32)

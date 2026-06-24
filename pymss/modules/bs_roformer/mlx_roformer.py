@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import torch
 
@@ -582,6 +584,174 @@ def _estimate_masks(module, x, dtype):
 
 def _mask_to_complex_shape(mask):
     return mask.reshape(mask.shape[0], mask.shape[1], mask.shape[2], mask.shape[3] // 2, 2).transpose(0, 1, 3, 2, 4)
+
+
+def _resolve_torch_dtype(dtype):
+    if dtype is None:
+        return _COMPUTE_DTYPE
+    if isinstance(dtype, str):
+        normalized = dtype.lower()
+        if normalized in ("float16", "fp16", "half"):
+            return torch.float16
+        if normalized in ("float32", "fp32", "single"):
+            return torch.float32
+    return dtype
+
+
+def _numpy_dtype_for_torch(dtype):
+    dtype = _resolve_torch_dtype(dtype)
+    if dtype == torch.float16:
+        return np.float16
+    if dtype == torch.float32:
+        return np.float32
+    raise TypeError(f"unsupported MLX tail dtype: {dtype}")
+
+
+def _mlx_device_label():
+    try:
+        import mlx.core as mx
+
+        return str(mx.default_device())
+    except Exception:
+        return "mlx_default"
+
+
+def mlx_final_norm_mask_many_to_torch(module, xs, references=None, dtype=_COMPUTE_DTYPE):
+    import mlx.core as mx
+
+    wall_started = time.perf_counter()
+    dtype = _resolve_torch_dtype(dtype)
+    mx_dtype = _mlx_dtype(dtype)
+    np_dtype = _numpy_dtype_for_torch(dtype)
+    xs = list(xs)
+    references = list(references) if references is not None else [None] * len(xs)
+    if len(references) != len(xs):
+        raise ValueError("references length must match xs length")
+    if not xs:
+        return [], {
+            "stage": "mlx_gpu_final_norm_mask",
+            "wall_sec": 0.0,
+            "chunks": 0,
+            "device": _mlx_device_label(),
+        }
+
+    host_pack_started = time.perf_counter()
+    x_arrays = []
+    for x in xs:
+        if torch.is_tensor(x):
+            x_arrays.append(x.detach().cpu().numpy())
+        else:
+            x_arrays.append(np.asarray(x))
+    x_np = np.ascontiguousarray(np.concatenate(x_arrays, axis=0), dtype=np_dtype)
+    host_pack_sec = time.perf_counter() - host_pack_started
+
+    transfer_in_started = time.perf_counter()
+    x_mx = mx.array(x_np).astype(mx_dtype)
+    mx.eval(x_mx)
+    transfer_in_sec = time.perf_counter() - transfer_in_started
+
+    compute_started = time.perf_counter()
+    mask_mx = _mask_to_complex_shape(_estimate_masks(module, _final_norm(module, x_mx, dtype), dtype))
+    mx.eval(mask_mx)
+    compute_sec = time.perf_counter() - compute_started
+
+    transfer_out_started = time.perf_counter()
+    mask_np = np.array(mask_mx, copy=True)
+    transfer_out_sec = time.perf_counter() - transfer_out_started
+
+    masks = []
+    for index, reference in enumerate(references):
+        mask = torch.from_numpy(np.ascontiguousarray(mask_np[index:index + 1]))
+        if reference is None:
+            mask = mask.to(dtype=dtype)
+        else:
+            mask = mask.to(device=reference.device, dtype=reference.dtype)
+        masks.append(mask)
+
+    timing = {
+        "stage": "mlx_gpu_final_norm_mask",
+        "wall_sec": float(time.perf_counter() - wall_started),
+        "host_pack_sec": float(host_pack_sec),
+        "transfer_in_sec": float(transfer_in_sec),
+        "compute_sec": float(compute_sec),
+        "transfer_out_sec": float(transfer_out_sec),
+        "chunks": int(len(xs)),
+        "batch": int(x_np.shape[0]),
+        "input_bytes": int(x_np.nbytes),
+        "output_bytes": int(mask_np.nbytes),
+        "dtype": str(dtype).replace("torch.", ""),
+        "device": _mlx_device_label(),
+        "fused_final_norm": True,
+    }
+    return masks, timing
+
+
+def mlx_final_norm_mask_to_torch(module, x, reference=None, dtype=_COMPUTE_DTYPE):
+    masks, timing = mlx_final_norm_mask_many_to_torch(module, [x], [reference], dtype)
+    return masks[0], timing
+
+
+def _mlx_istft_context(module, context, dtype):
+    dtype = _resolve_torch_dtype(dtype)
+    return {
+        "batch": int(context.batch),
+        "channels": int(context.channels),
+        "freq_bins": int(context.freq_bins),
+        "audio_length": int(context.audio_length),
+        "window": _torch_to_mlx_array(context.stft_window, dtype),
+        "n_fft": int(module.stft_kwargs["n_fft"]),
+        "hop": int(module.stft_kwargs["hop_length"]),
+        "normalized": bool(module.stft_kwargs.get("normalized", False)),
+        "dtype": _mlx_dtype(dtype),
+    }
+
+
+def mlx_istft_roformer_to_torch(module, stft_repr, context, length, dtype=_COMPUTE_DTYPE):
+    import mlx.core as mx
+
+    wall_started = time.perf_counter()
+    dtype = _resolve_torch_dtype(dtype)
+    mx_dtype = _mlx_dtype(dtype)
+    np_dtype = _numpy_dtype_for_torch(dtype)
+    reference_device = stft_repr.device
+    reference_dtype = stft_repr.real.dtype if stft_repr.is_complex() else stft_repr.dtype
+
+    host_pack_started = time.perf_counter()
+    if stft_repr.is_complex():
+        real_repr = torch.view_as_real(stft_repr.detach().cpu())
+    else:
+        real_repr = stft_repr.detach().cpu()
+    stft_np = np.ascontiguousarray(real_repr.to(dtype=dtype).numpy(), dtype=np_dtype)
+    host_pack_sec = time.perf_counter() - host_pack_started
+
+    transfer_in_started = time.perf_counter()
+    stft_mx = mx.array(stft_np).astype(mx_dtype)
+    mx.eval(stft_mx)
+    transfer_in_sec = time.perf_counter() - transfer_in_started
+
+    compute_started = time.perf_counter()
+    output_mx = _istft_roformer(module, stft_mx, _mlx_istft_context(module, context, dtype), length)
+    mx.eval(output_mx)
+    compute_sec = time.perf_counter() - compute_started
+
+    transfer_out_started = time.perf_counter()
+    output_np = np.array(output_mx, copy=True)
+    transfer_out_sec = time.perf_counter() - transfer_out_started
+    output = torch.from_numpy(output_np).to(device=reference_device, dtype=reference_dtype)
+
+    timing = {
+        "stage": "mlx_gpu_istft",
+        "wall_sec": float(time.perf_counter() - wall_started),
+        "host_pack_sec": float(host_pack_sec),
+        "transfer_in_sec": float(transfer_in_sec),
+        "compute_sec": float(compute_sec),
+        "transfer_out_sec": float(transfer_out_sec),
+        "input_bytes": int(stft_np.nbytes),
+        "output_bytes": int(output_np.nbytes),
+        "dtype": str(dtype).replace("torch.", ""),
+        "device": _mlx_device_label(),
+    }
+    return output, timing
 
 
 def _forward_mask_core(module, stft_repr, dtype):

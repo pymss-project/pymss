@@ -1,0 +1,1170 @@
+{
+  "audio" : "test.m4a",
+  "audio_seconds" : 311.61179138321995,
+  "chunk_results" : [
+    {
+      "index" : 0,
+      "stages" : [
+        {
+          "ms" : 942.00875,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 921.29975,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 894.780708,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 956.662167,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 981.637375,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 970.833458,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1057.194084,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 0,
+      "total_ms" : 6724.416292
+    },
+    {
+      "index" : 1,
+      "stages" : [
+        {
+          "ms" : 913.195708,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 893.14025,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 883.6215,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 975.891084,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1002.4685,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 966.898667,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1072.526334,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 456000,
+      "total_ms" : 6707.742043
+    },
+    {
+      "index" : 2,
+      "stages" : [
+        {
+          "ms" : 963.36425,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 984.421625,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1009.102667,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1011.105208,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 961.732708,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 950.156084,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1051.211958,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 912000,
+      "total_ms" : 6931.0945
+    },
+    {
+      "index" : 3,
+      "stages" : [
+        {
+          "ms" : 1004.38125,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 991.522541,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1015.46075,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 987.37875,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 966.511209,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1005.12225,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1047.063583,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 1368000,
+      "total_ms" : 7017.4403330000005
+    },
+    {
+      "index" : 4,
+      "stages" : [
+        {
+          "ms" : 942.620958,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 940.504459,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 936.312667,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 940.029042,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 933.106166,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 930.127834,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1104.332042,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 1824000,
+      "total_ms" : 6727.033168
+    },
+    {
+      "index" : 5,
+      "stages" : [
+        {
+          "ms" : 948.156833,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 933.0515,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 939.488792,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 942.9305,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 929.879583,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 940.425792,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1027.026,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 2280000,
+      "total_ms" : 6660.959
+    },
+    {
+      "index" : 6,
+      "stages" : [
+        {
+          "ms" : 939.040459,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 924.639208,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 937.291667,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 937.479375,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 942.264542,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 961.23075,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1015.455917,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 2736000,
+      "total_ms" : 6657.401918
+    },
+    {
+      "index" : 7,
+      "stages" : [
+        {
+          "ms" : 925.127833,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 944.353792,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 934.123958,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 938.107875,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 945.65575,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 963.6775,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1112.707375,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 3192000,
+      "total_ms" : 6763.754083
+    },
+    {
+      "index" : 8,
+      "stages" : [
+        {
+          "ms" : 1006.011583,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 999.76625,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1005.023667,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1007.297084,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1001.033667,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1006.656916,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1094.800917,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 3648000,
+      "total_ms" : 7120.5900839999995
+    },
+    {
+      "index" : 9,
+      "stages" : [
+        {
+          "ms" : 1003.585,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 996.674167,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 997.29125,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 996.074792,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 995.425459,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1003.700584,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1108.680125,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 4104000,
+      "total_ms" : 7101.431377
+    },
+    {
+      "index" : 10,
+      "stages" : [
+        {
+          "ms" : 1013.444709,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1000.200875,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1007.176583,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1131.508792,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1100.232375,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1059.758625,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1123.056,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 4560000,
+      "total_ms" : 7435.377959000001
+    },
+    {
+      "index" : 11,
+      "stages" : [
+        {
+          "ms" : 1000.73425,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 992.403958,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1081.402042,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1122.47475,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1064.030875,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1089.5555,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1194.851,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 5016000,
+      "total_ms" : 7545.452375000001
+    },
+    {
+      "index" : 12,
+      "stages" : [
+        {
+          "ms" : 1108.359875,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1069.232875,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1127.030875,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1127.851959,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1118.157167,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1133.043375,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1368.099208,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 5472000,
+      "total_ms" : 8051.775334
+    },
+    {
+      "index" : 13,
+      "stages" : [
+        {
+          "ms" : 1050.157834,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1119.927542,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1067.496833,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1120.412625,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1125.315,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1125.909833,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1467.764125,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 5928000,
+      "total_ms" : 8076.983791999999
+    },
+    {
+      "index" : 14,
+      "stages" : [
+        {
+          "ms" : 1153.354875,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1123.810416,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1099.626542,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1132.669958,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1131.462583,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1134.175625,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1393.001375,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 6384000,
+      "total_ms" : 8168.101374
+    },
+    {
+      "index" : 15,
+      "stages" : [
+        {
+          "ms" : 1132.303458,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1110.436834,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1122.588833,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1124.036292,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1126.686667,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1125.777125,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1505.172208,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 6840000,
+      "total_ms" : 8247.001417
+    },
+    {
+      "index" : 16,
+      "stages" : [
+        {
+          "ms" : 1375.354833,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1140.732042,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1133.47175,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1138.516334,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1138.089875,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1134.450958,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1321.974458,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 7296000,
+      "total_ms" : 8382.59025
+    },
+    {
+      "index" : 17,
+      "stages" : [
+        {
+          "ms" : 1344.76975,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1125.952625,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1120.915416,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1124.421833,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1123.704875,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1118.998375,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1276.989584,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 7752000,
+      "total_ms" : 8235.752458
+    },
+    {
+      "index" : 18,
+      "stages" : [
+        {
+          "ms" : 1142.566583,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1125.832083,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1131.829959,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1175.413792,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1148.226583,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1133.509791,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1226.692375,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 8208000,
+      "total_ms" : 8084.071166
+    },
+    {
+      "index" : 19,
+      "stages" : [
+        {
+          "ms" : 1127.909959,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1114.5605,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1121.122875,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1245.777833,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1214.298792,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1188.726167,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1222.385208,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 8664000,
+      "total_ms" : 8234.781334000001
+    },
+    {
+      "index" : 20,
+      "stages" : [
+        {
+          "ms" : 1142.90475,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1135.625708,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1133.711166,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1233.970083,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1222.786917,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1161.050917,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1297.917958,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 9120000,
+      "total_ms" : 8327.967499
+    },
+    {
+      "index" : 21,
+      "stages" : [
+        {
+          "ms" : 1165.938875,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1227.579334,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1215.476167,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1192.006,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1228.873708,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1226.351917,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1292.574916,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 9576000,
+      "total_ms" : 8548.800917
+    },
+    {
+      "index" : 22,
+      "stages" : [
+        {
+          "ms" : 1195.858625,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1347.641583,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1376.318459,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1213.193458,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1224.76125,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1198.170667,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1326.640584,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 10032000,
+      "total_ms" : 8882.584626000002
+    },
+    {
+      "index" : 23,
+      "stages" : [
+        {
+          "ms" : 1350.991667,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1357.057916,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1359.197708,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1141.644208,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1335.39,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1272.471666,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1323.857459,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 10488000,
+      "total_ms" : 9140.610624
+    },
+    {
+      "index" : 24,
+      "stages" : [
+        {
+          "ms" : 1141.541042,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1228.694333,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1234.727042,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1162.174,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1184.384,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1178.219083,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1323.585666,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 10944000,
+      "total_ms" : 8453.325165999999
+    },
+    {
+      "index" : 25,
+      "stages" : [
+        {
+          "ms" : 1138.959666,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1328.617292,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1289.522875,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1268.017542,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1320.705625,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1299.926042,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1518.469584,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 11400000,
+      "total_ms" : 9164.218626
+    },
+    {
+      "index" : 26,
+      "stages" : [
+        {
+          "ms" : 1473.235917,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1363.912417,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1416.216125,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1481.407,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1379.814541,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1387.902541,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1716.693458,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 11856000,
+      "total_ms" : 10219.181999
+    },
+    {
+      "index" : 27,
+      "stages" : [
+        {
+          "ms" : 1594.040208,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1420.032458,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1378.477,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1371.944125,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1377.732542,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1388.425042,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 1728.473208,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 12312000,
+      "total_ms" : 10259.124582999999
+    },
+    {
+      "index" : 28,
+      "stages" : [
+        {
+          "ms" : 1386.142833,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1374.529166,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1413.353209,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1402.292791,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1402.945708,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1407.551333,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 2153.884834,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 12768000,
+      "total_ms" : 10540.699874
+    },
+    {
+      "index" : 29,
+      "stages" : [
+        {
+          "ms" : 1405.313333,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1531.642833,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1403.647042,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1388.760625,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1381.313416,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1385.979709,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 2228.711875,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 13224000,
+      "total_ms" : 10725.368833
+    },
+    {
+      "index" : 30,
+      "stages" : [
+        {
+          "ms" : 1392.382834,
+          "stage" : "first_2_segments"
+        },
+        {
+          "ms" : 1382.153208,
+          "stage" : "roformer_layer_pairs_2_3"
+        },
+        {
+          "ms" : 1410.797583,
+          "stage" : "roformer_layer_pairs_4_5"
+        },
+        {
+          "ms" : 1578.55775,
+          "stage" : "roformer_layer_pairs_6_7"
+        },
+        {
+          "ms" : 1697.320125,
+          "stage" : "roformer_layer_pairs_8_9"
+        },
+        {
+          "ms" : 1548.645125,
+          "stage" : "roformer_layer_pairs_10_11"
+        },
+        {
+          "ms" : 2002.924459,
+          "stage" : "tail_pipeline"
+        }
+      ],
+      "start_sample" : 13262080,
+      "total_ms" : 11012.781084
+    }
+  ],
+  "chunks" : 31,
+  "input_shape" : [
+    1,
+    938,
+    4100
+  ],
+  "load_ms" : 150309.29383500008,
+  "model" : "real_audio_in_memory_stage_major_coreml",
+  "output_shape" : [
+    1,
+    1,
+    2050,
+    938,
+    2
+  ],
+  "pipeline_ms" : 412016.404958,
+  "sample_rate" : 44100,
+  "stage_load_ms" : [
+    {
+      "ms" : 19679.286208999998,
+      "stage" : "first_2_segments"
+    },
+    {
+      "ms" : 18714.222084,
+      "stage" : "roformer_layer_pairs_2_3"
+    },
+    {
+      "ms" : 19294.561290999998,
+      "stage" : "roformer_layer_pairs_4_5"
+    },
+    {
+      "ms" : 19859.200831000002,
+      "stage" : "roformer_layer_pairs_6_7"
+    },
+    {
+      "ms" : 21895.648708,
+      "stage" : "roformer_layer_pairs_8_9"
+    },
+    {
+      "ms" : 22168.273837000008,
+      "stage" : "roformer_layer_pairs_10_11"
+    },
+    {
+      "ms" : 28698.100875,
+      "stage" : "tail_pipeline"
+    }
+  ],
+  "stage_total_ms" : [
+    {
+      "ms" : 35423.758499999996,
+      "stage" : "first_2_segments"
+    },
+    {
+      "ms" : 35149.94954000001,
+      "stage" : "roformer_layer_pairs_2_3"
+    },
+    {
+      "ms" : 35196.603709999996,
+      "stage" : "roformer_layer_pairs_4_5"
+    },
+    {
+      "ms" : 35570.007627000006,
+      "stage" : "roformer_layer_pairs_6_7"
+    },
+    {
+      "ms" : 35705.947582999994,
+      "stage" : "roformer_layer_pairs_8_9"
+    },
+    {
+      "ms" : 35397.429251,
+      "stage" : "roformer_layer_pairs_10_11"
+    },
+    {
+      "ms" : 41704.717877,
+      "stage" : "tail_pipeline"
+    }
+  ],
+  "tensor_file" : "input_flat_f32.bin",
+  "timestamp_unix" : 1782337952.9935532
+}

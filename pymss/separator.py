@@ -15,7 +15,7 @@ from tqdm import tqdm
 from .audio_io import load_audio, save_audio
 from .utils import demix, get_model_from_config
 from .logger import get_separation_logger, set_log_level
-from .config import AttrDict
+from .config import AttrDict, load_config
 
 
 INFERENCE_PARAM_TARGETS = {
@@ -36,6 +36,75 @@ INFERENCE_PARAM_TARGETS = {
     'mps_mlx_min_tokens': 'inference',
     'mps_model_backend': 'inference',
     'mps_model_compute_dtype': 'inference',
+    'coreml_ane_package_root': 'inference',
+    'coreml_ane_compute_unit': 'inference',
+    'coreml_ane_storage': 'inference',
+    'coreml_ane_memmap_dir': 'inference',
+    'coreml_ane_keep_memmap': 'inference',
+    'private_ane_cache_transformers': 'inference',
+    'private_ane_persistent_transformer_handles': 'inference',
+    'private_ane_chunk_batch_size': 'inference',
+    'private_ane_auto_chunk_batch_max': 'inference',
+    'private_ane_auto_chunk_batch_min_free_memory_percent': 'inference',
+    'private_ane_max_rss_mb': 'inference',
+    'private_ane_preload_min_free_memory_percent': 'inference',
+    'private_ane_preload_max_swap_used_mb': 'inference',
+    'private_ane_min_free_memory_percent': 'inference',
+    'private_ane_emergency_free_memory_percent': 'inference',
+    'private_ane_free_memory_strikes': 'inference',
+    'private_ane_max_ane_service_rss_mb': 'inference',
+    'private_ane_max_swap_used_mb': 'inference',
+    'private_ane_fuse_residual': 'inference',
+    'private_ane_fuse_gate_ffn': 'inference',
+    'private_ane_fuse_gate_ffn_max_work_items': 'inference',
+    'private_ane_two_input_gate': 'inference',
+    'private_ane_bridge_pack_gate': 'inference',
+    'private_ane_bridge_client_variant': 'inference',
+    'private_ane_bridge_wrapper_route': 'inference',
+    'private_ane_surface_handoff_gate_ffn': 'inference',
+    'private_ane_batch_axis_eval': 'inference',
+    'private_ane_tiled_time_attention_pre': 'inference',
+    'private_ane_tiled_time_attention_pre_q_chunk': 'inference',
+    'private_ane_direct_time_to_freq_unpadded': 'inference',
+    'private_ane_transformer_hot_gc_interval': 'inference',
+    'private_ane_transformer_guard_interval': 'inference',
+    'private_ane_fused_band_split': 'inference',
+    'private_ane_fused_band_split_max_outputs': 'inference',
+    'private_ane_fused_mask_estimator': 'inference',
+    'private_ane_fused_mask_estimator_max_outputs': 'inference',
+    'private_ane_persistent_aux_handles': 'inference',
+    'private_ane_dynamic_stft': 'inference',
+    'private_ane_dynamic_stft_max_outputs': 'inference',
+    'private_ane_native_dynamic_stft_input_weights': 'inference',
+    'private_ane_fused_stft': 'inference',
+    'private_ane_fused_stft_max_outputs': 'inference',
+    'private_ane_persistent_stft_handles': 'inference',
+    'private_ane_preload_stft_handles': 'inference',
+    'private_ane_stft_bridge_qos': 'inference',
+    'private_ane_stft_atomic_writes': 'inference',
+    'private_ane_stft_cache_tmpdir': 'inference',
+    'private_ane_stft_keep_tmpdir': 'inference',
+    'private_ane_release_aux_handles_before_istft': 'inference',
+    'private_ane_defer_istft_until_after_masks': 'inference',
+    'private_ane_stft_istft_batch_channels': 'inference',
+    'private_ane_gpu_final_norm_mask': 'inference',
+    'private_ane_gpu_istft': 'inference',
+    'private_ane_allow_torch_fallback': 'inference',
+    'private_ane_max_chunks': 'inference',
+    'private_ane_allow_long_audio': 'inference',
+    'private_ane_transformer_cache_segments': 'inference',
+    'private_ane_auto_transformer_cache_segments': 'inference',
+    'private_ane_auto_transformer_cache_min_free_memory_percent': 'inference',
+    'private_ane_auto_transformer_cache_max_segments': 'inference',
+    'private_ane_allow_transformer_handle_cache': 'inference',
+    'private_ane_max_transformer_layers': 'inference',
+    'private_ane_skip_transformers': 'inference',
+    'private_ane_transformer_timing_tail': 'inference',
+    'private_ane_gelu_mode': 'inference',
+    'private_ane_load_cache': 'inference',
+    'private_ane_cache_tmpdir': 'inference',
+    'private_ane_keep_tmpdir': 'inference',
+    'private_ane_skip_source_write_on_cache_hit': 'inference',
     'fuse_conv_bn': 'inference',
     'use_channels_last': 'inference',
     'shifts': 'inference',
@@ -54,12 +123,80 @@ PASSTHROUGH_INFERENCE_PARAMS = frozenset({
     'mps_attention_backend',
     'mps_model_backend',
     'mps_model_compute_dtype',
+    'coreml_ane_package_root',
+    'coreml_ane_compute_unit',
+    'coreml_ane_storage',
+    'coreml_ane_memmap_dir',
+    'coreml_ane_keep_memmap',
+    'private_ane_cache_transformers',
+    'private_ane_persistent_transformer_handles',
+    'private_ane_allow_long_audio',
+    'private_ane_auto_transformer_cache_segments',
+    'private_ane_auto_transformer_cache_min_free_memory_percent',
+    'private_ane_auto_transformer_cache_max_segments',
+    'private_ane_allow_transformer_handle_cache',
+    'private_ane_skip_transformers',
+    'private_ane_gelu_mode',
+    'private_ane_preload_min_free_memory_percent',
+    'private_ane_preload_max_swap_used_mb',
+    'private_ane_emergency_free_memory_percent',
+    'private_ane_max_ane_service_rss_mb',
+    'private_ane_fuse_residual',
+    'private_ane_fuse_gate_ffn',
+    'private_ane_fuse_gate_ffn_max_work_items',
+    'private_ane_two_input_gate',
+    'private_ane_bridge_pack_gate',
+    'private_ane_bridge_client_variant',
+    'private_ane_bridge_wrapper_route',
+    'private_ane_surface_handoff_gate_ffn',
+    'private_ane_batch_axis_eval',
+    'private_ane_tiled_time_attention_pre',
+    'private_ane_tiled_time_attention_pre_q_chunk',
+    'private_ane_direct_time_to_freq_unpadded',
+    'private_ane_transformer_hot_gc_interval',
+    'private_ane_transformer_guard_interval',
+    'private_ane_fused_band_split',
+    'private_ane_fused_band_split_max_outputs',
+    'private_ane_fused_mask_estimator',
+    'private_ane_fused_mask_estimator_max_outputs',
+    'private_ane_persistent_aux_handles',
+    'private_ane_dynamic_stft',
+    'private_ane_dynamic_stft_max_outputs',
+    'private_ane_native_dynamic_stft_input_weights',
+    'private_ane_fused_stft',
+    'private_ane_fused_stft_max_outputs',
+    'private_ane_persistent_stft_handles',
+    'private_ane_preload_stft_handles',
+    'private_ane_stft_bridge_qos',
+    'private_ane_stft_atomic_writes',
+    'private_ane_stft_cache_tmpdir',
+    'private_ane_stft_keep_tmpdir',
+    'private_ane_release_aux_handles_before_istft',
+    'private_ane_defer_istft_until_after_masks',
+    'private_ane_stft_istft_batch_channels',
+    'private_ane_gpu_final_norm_mask',
+    'private_ane_gpu_istft',
+    'private_ane_allow_torch_fallback',
+    'private_ane_load_cache',
+    'private_ane_cache_tmpdir',
+    'private_ane_keep_tmpdir',
+    'private_ane_skip_source_write_on_cache_hit',
     'fuse_conv_bn',
     'use_channels_last',
     'split',
 })
 FAST_INIT_MODEL_TYPES = {'bs_roformer', 'bs_roformer_hyperace', 'mel_band_roformer'}
 LEGACY_DEMUCS_MODEL_TYPES = {'demucs', 'tasnet', 'legacy_demucs', 'legacy_tasnet'}
+DEFAULT_PRIVATE_ANE_PRELOAD_MIN_FREE_MEMORY_PERCENT = 0
+DEFAULT_PRIVATE_ANE_PRELOAD_MAX_SWAP_USED_MB = 0.0
+DEFAULT_PRIVATE_ANE_REBOOT_SAFE_MEMORY_FLOOR_PERCENT = 0
+DEFAULT_PRIVATE_ANE_MIN_FREE_MEMORY_PERCENT = 0
+DEFAULT_PRIVATE_ANE_MAX_SWAP_USED_MB = 0.0
+MIN_PRIVATE_ANE_PRELOAD_MIN_FREE_MEMORY_PERCENT = 30
+MAX_PRIVATE_ANE_PRELOAD_MAX_SWAP_USED_MB = 1536.0
+MIN_PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT = 30
+MIN_PRIVATE_ANE_MIN_FREE_MEMORY_PERCENT = 30
+MAX_PRIVATE_ANE_MAX_SWAP_USED_MB = 1536.0
 
 
 def _resolve_public_device(device, inference_params, logger):
@@ -99,6 +236,121 @@ def _prefer_mlx_for_auto(requested_device, selected_device, inference_params, lo
             inference_params.setdefault("mps_model_compute_dtype", "float16")
             logger.debug("Auto device selected MPS, enabling MLX full model backend")
     return inference_params
+
+
+def _private_ane_requested(inference_params):
+    backend = (inference_params or {}).get("mps_model_backend")
+    return isinstance(backend, str) and backend.lower() == "private_ane"
+
+
+def _preload_inference_view(config_path, inference_params):
+    merged = {}
+    if config_path and os.path.exists(config_path):
+        try:
+            config = load_config(config_path)
+        except Exception:
+            config = None
+        if config is not None:
+            merged.update(dict(config.get("inference", {}) or {}))
+    for key, value in dict(inference_params or {}).items():
+        if value is not None:
+            merged[key] = value
+    return merged
+
+
+def _optional_int_guard(value, default):
+    if value is None:
+        return default
+    if value in ("", 0, "0"):
+        return None
+    return int(value)
+
+
+def _optional_float_guard(value, default):
+    if value is None:
+        return default
+    if value in ("", 0, "0"):
+        return None
+    return float(value)
+
+
+def _system_free_memory_percent():
+    try:
+        output = subprocess.check_output(["memory_pressure"], text=True, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    match = re.search(r"System-wide memory free percentage:\s*(\d+)%", output)
+    return None if match is None else int(match.group(1))
+
+
+def _system_swap_used_mb():
+    try:
+        output = subprocess.check_output(["sysctl", "vm.swapusage"], text=True, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    match = re.search(r"used\s*=\s*([0-9.]+)([KMG])", output)
+    if match is None:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2)
+    if unit == "K":
+        return value / 1024.0
+    if unit == "G":
+        return value * 1024.0
+    return value
+
+
+def _require_private_ane_preload_headroom(inference_params, label):
+    if not _private_ane_requested(inference_params):
+        return
+    min_free = _optional_int_guard(
+        inference_params.get("private_ane_preload_min_free_memory_percent"),
+        DEFAULT_PRIVATE_ANE_PRELOAD_MIN_FREE_MEMORY_PERCENT,
+    )
+    emergency = _optional_int_guard(
+        inference_params.get("private_ane_emergency_free_memory_percent"),
+        DEFAULT_PRIVATE_ANE_REBOOT_SAFE_MEMORY_FLOOR_PERCENT,
+    )
+    max_swap = _optional_float_guard(
+        inference_params.get("private_ane_preload_max_swap_used_mb"),
+        DEFAULT_PRIVATE_ANE_PRELOAD_MAX_SWAP_USED_MB,
+    )
+    if min_free is not None and min_free < MIN_PRIVATE_ANE_PRELOAD_MIN_FREE_MEMORY_PERCENT:
+        raise ValueError(
+            "private_ane_preload_min_free_memory_percent must be >= "
+            f"{MIN_PRIVATE_ANE_PRELOAD_MIN_FREE_MEMORY_PERCENT}, or 0 to disable the preflight soft guard"
+        )
+    if emergency is not None and emergency < MIN_PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT:
+        raise ValueError(
+            "private_ane_emergency_free_memory_percent must be >= "
+            f"{MIN_PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT}, or 0 to disable"
+        )
+    if max_swap is not None and (max_swap < 0 or max_swap > MAX_PRIVATE_ANE_PRELOAD_MAX_SWAP_USED_MB):
+        raise ValueError(
+            "private_ane_preload_max_swap_used_mb must be <= "
+            f"{MAX_PRIVATE_ANE_PRELOAD_MAX_SWAP_USED_MB}, or 0 to disable"
+        )
+    free_percent = _system_free_memory_percent() if (min_free is not None or emergency is not None) else None
+    if free_percent is None and (min_free is not None or emergency is not None):
+        raise RuntimeError(f"private_ane could not read system memory headroom at {label}")
+    if emergency is not None and free_percent < emergency:
+        raise MemoryError(
+            "private_ane refused before model load because system memory is below the emergency floor "
+            f"at {label}: {free_percent}% < {emergency}%"
+        )
+    if min_free is not None and free_percent < min_free:
+        raise MemoryError(
+            "private_ane refused before model load because system free memory is low "
+            f"at {label}: {free_percent}% < {min_free}%"
+        )
+    swap_used_mb = _system_swap_used_mb() if max_swap is not None else None
+    if swap_used_mb is None and max_swap is not None:
+        raise RuntimeError(f"private_ane could not read system swap usage at {label}")
+    if max_swap is not None and swap_used_mb > max_swap:
+        raise MemoryError(
+            "private_ane refused before model load because swap is already in use "
+            f"at {label}: {swap_used_mb:.1f} MB > {max_swap:.1f} MB"
+        )
 
 
 def _unwrap_state_dict(state_dict):
@@ -176,6 +428,16 @@ def _skip_torch_default_init():
             cls.reset_parameters = reset_parameters
 
 
+@contextmanager
+def _torch_default_dtype(dtype):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(dtype)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
+
+
 def _install_demucs_pickle_stubs():
     import sys
     import types
@@ -218,6 +480,15 @@ def _infer_mel_band_roformer_mlp_hidden_layers(state_dict):
     if not layer_indices:
         return None
     return len(layer_indices) - 1
+
+
+def _coerce_state_dict_floating_dtype_(state_dict, dtype):
+    for index, (key, value) in enumerate(list(state_dict.items())):
+        if torch.is_tensor(value) and value.is_floating_point() and value.dtype != dtype:
+            state_dict[key] = value.to(dtype=dtype)
+        if index % 64 == 0:
+            gc.collect()
+    gc.collect()
 
 
 def _store_torch_model_on_cpu_for_mlx(config, device):
@@ -409,6 +680,8 @@ class MSSeparator:
         torch.backends.cudnn.benchmark = True
         self.logger.info(f'Using device: {self.device}, device_ids: {self.device_ids}')
 
+        self._preload_inference_params = _preload_inference_view(self.config_path, self.inference_params)
+        _require_private_ane_preload_headroom(self._preload_inference_params, "before_load_model")
         self.model, self.config = self.load_model()
 
         if type(self.store_dirs) == str:
@@ -526,6 +799,9 @@ class MSSeparator:
             self.logger.debug(f"Loading legacy Demucs/TasNet model completed, duration: {time() - start_time:.2f} seconds")
             return model, config
 
+        private_ane_backend = _private_ane_requested(
+            getattr(self, "_preload_inference_params", self.inference_params)
+        )
         state_dict = _load_state_dict(self.model_type, self.model_path, self.device)
         model_type = _runtime_model_type(self.model_type, state_dict)
         model_kwargs_override = None
@@ -533,9 +809,12 @@ class MSSeparator:
             model_kwargs_override = {
                 'mlp_hidden_layers': _infer_mel_band_roformer_mlp_hidden_layers(state_dict),
             }
+        if private_ane_backend:
+            _coerce_state_dict_floating_dtype_(state_dict, torch.float16)
 
         init_context = _skip_torch_default_init() if model_type in FAST_INIT_MODEL_TYPES else nullcontext()
-        with init_context:
+        dtype_context = _torch_default_dtype(torch.float16) if private_ane_backend else nullcontext()
+        with init_context, dtype_context:
             model, config = get_model_from_config(model_type, self.config_path, model_kwargs_override=model_kwargs_override)
 
         self.update_inference_params(config, self.inference_params)
@@ -546,12 +825,19 @@ class MSSeparator:
         self.logger.info(f"Model params: instruments: {config.training.get('instruments', None)}, target_instrument: {config.training.get('target_instrument', None)}")
         self.logger.debug(f"Model params: batch_size: {config.inference.get('batch_size', None)}, overlap_size: {config.inference.get('overlap_size', None)}, chunk_size: {config.audio.get('chunk_size', None)}, normalize: {config.inference.get('normalize', None)}, use_tta: {self.use_tta}")
 
-        try:
-            model.load_state_dict(state_dict, assign=True)
-        except TypeError:
+        if private_ane_backend:
             model.load_state_dict(state_dict)
+            del state_dict
+            gc.collect()
+        else:
+            try:
+                model.load_state_dict(state_dict, assign=True)
+            except TypeError:
+                model.load_state_dict(state_dict)
         if torch.device(self.device).type == "mps":
             _coerce_mps_float64(model)
+        if config.inference.get('mps_model_backend', None) == 'private_ane' and not private_ane_backend:
+            model = model.half()
 
         keep_torch_model_cpu = _store_torch_model_on_cpu_for_mlx(config, self.device)
         if len(self.device_ids) > 1 and not keep_torch_model_cpu:
@@ -576,6 +862,599 @@ class MSSeparator:
             for module in model.modules():
                 if hasattr(module, 'set_mps_model_backend'):
                     module.set_mps_model_backend(model_backend, compute_dtype)
+        private_ane_cache_transformers = config.inference.get('private_ane_cache_transformers', None)
+        if private_ane_cache_transformers is not None:
+            if isinstance(private_ane_cache_transformers, str):
+                private_ane_cache_transformers = private_ane_cache_transformers.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_cache_transformers'):
+                    module.private_ane_cache_transformers = bool(private_ane_cache_transformers)
+        private_ane_persistent_transformer_handles = config.inference.get(
+            'private_ane_persistent_transformer_handles',
+            None,
+        )
+        if private_ane_persistent_transformer_handles is not None:
+            if isinstance(private_ane_persistent_transformer_handles, str):
+                private_ane_persistent_transformer_handles = (
+                    private_ane_persistent_transformer_handles.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_persistent_transformer_handles'):
+                    module.private_ane_persistent_transformer_handles = bool(
+                        private_ane_persistent_transformer_handles
+                    )
+        private_ane_transformer_cache_segments = config.inference.get('private_ane_transformer_cache_segments', None)
+        if private_ane_transformer_cache_segments is not None:
+            private_ane_transformer_cache_segments = int(private_ane_transformer_cache_segments)
+            for module in model.modules():
+                if hasattr(module, 'private_ane_transformer_cache_segments'):
+                    module.private_ane_transformer_cache_segments = private_ane_transformer_cache_segments
+        private_ane_auto_transformer_cache_segments = config.inference.get(
+            'private_ane_auto_transformer_cache_segments',
+            None,
+        )
+        if private_ane_auto_transformer_cache_segments is not None:
+            if isinstance(private_ane_auto_transformer_cache_segments, str):
+                private_ane_auto_transformer_cache_segments = (
+                    private_ane_auto_transformer_cache_segments.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_auto_transformer_cache_segments'):
+                    module.private_ane_auto_transformer_cache_segments = bool(
+                        private_ane_auto_transformer_cache_segments
+                    )
+        private_ane_auto_transformer_cache_min_free_memory_percent = config.inference.get(
+            'private_ane_auto_transformer_cache_min_free_memory_percent',
+            None,
+        )
+        if private_ane_auto_transformer_cache_min_free_memory_percent is not None:
+            private_ane_auto_transformer_cache_min_free_memory_percent = (
+                None if private_ane_auto_transformer_cache_min_free_memory_percent in ("", 0, "0")
+                else int(private_ane_auto_transformer_cache_min_free_memory_percent)
+            )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_auto_transformer_cache_min_free_memory_percent'):
+                    module.private_ane_auto_transformer_cache_min_free_memory_percent = (
+                        private_ane_auto_transformer_cache_min_free_memory_percent
+                    )
+        private_ane_auto_transformer_cache_max_segments = config.inference.get(
+            'private_ane_auto_transformer_cache_max_segments',
+            None,
+        )
+        if private_ane_auto_transformer_cache_max_segments is not None:
+            private_ane_auto_transformer_cache_max_segments = int(private_ane_auto_transformer_cache_max_segments)
+            if private_ane_auto_transformer_cache_max_segments < 0:
+                raise ValueError("private_ane_auto_transformer_cache_max_segments must be >= 0")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_auto_transformer_cache_max_segments'):
+                    module.private_ane_auto_transformer_cache_max_segments = (
+                        private_ane_auto_transformer_cache_max_segments
+                    )
+        private_ane_allow_transformer_handle_cache = config.inference.get(
+            'private_ane_allow_transformer_handle_cache',
+            None,
+        )
+        if private_ane_allow_transformer_handle_cache is not None:
+            if isinstance(private_ane_allow_transformer_handle_cache, str):
+                private_ane_allow_transformer_handle_cache = (
+                    private_ane_allow_transformer_handle_cache.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_allow_transformer_handle_cache'):
+                    module.private_ane_allow_transformer_handle_cache = bool(
+                        private_ane_allow_transformer_handle_cache
+                    )
+        private_ane_auto_chunk_batch_max = config.inference.get('private_ane_auto_chunk_batch_max', None)
+        if private_ane_auto_chunk_batch_max is not None:
+            private_ane_auto_chunk_batch_max = int(private_ane_auto_chunk_batch_max)
+            if private_ane_auto_chunk_batch_max < 1:
+                raise ValueError("private_ane_auto_chunk_batch_max must be >= 1")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_auto_chunk_batch_max'):
+                    module.private_ane_auto_chunk_batch_max = private_ane_auto_chunk_batch_max
+        private_ane_auto_chunk_batch_min_free_memory_percent = config.inference.get(
+            'private_ane_auto_chunk_batch_min_free_memory_percent',
+            None,
+        )
+        if private_ane_auto_chunk_batch_min_free_memory_percent is not None:
+            private_ane_auto_chunk_batch_min_free_memory_percent = (
+                None if private_ane_auto_chunk_batch_min_free_memory_percent in ("", 0, "0")
+                else int(private_ane_auto_chunk_batch_min_free_memory_percent)
+            )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_auto_chunk_batch_min_free_memory_percent'):
+                    module.private_ane_auto_chunk_batch_min_free_memory_percent = (
+                        private_ane_auto_chunk_batch_min_free_memory_percent
+                    )
+        private_ane_max_transformer_layers = config.inference.get('private_ane_max_transformer_layers', None)
+        if private_ane_max_transformer_layers is not None:
+            private_ane_max_transformer_layers = (
+                None if private_ane_max_transformer_layers in ("", 0, "0")
+                else int(private_ane_max_transformer_layers)
+            )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_max_transformer_layers'):
+                    module.private_ane_max_transformer_layers = private_ane_max_transformer_layers
+        private_ane_skip_transformers = config.inference.get('private_ane_skip_transformers', None)
+        if private_ane_skip_transformers is not None:
+            if isinstance(private_ane_skip_transformers, str):
+                private_ane_skip_transformers = private_ane_skip_transformers.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_skip_transformers'):
+                    module.private_ane_skip_transformers = bool(private_ane_skip_transformers)
+        private_ane_gelu_mode = config.inference.get('private_ane_gelu_mode', None)
+        if private_ane_gelu_mode is not None:
+            private_ane_gelu_mode = str(private_ane_gelu_mode).upper()
+            if private_ane_gelu_mode not in ("EXACT", "TANH_APPROXIMATION"):
+                raise ValueError("private_ane_gelu_mode must be 'EXACT' or 'TANH_APPROXIMATION'")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_gelu_mode'):
+                    module.private_ane_gelu_mode = private_ane_gelu_mode
+        private_ane_max_rss_mb = config.inference.get('private_ane_max_rss_mb', None)
+        if private_ane_max_rss_mb is not None:
+            private_ane_max_rss_mb = None if private_ane_max_rss_mb in ("", 0, "0") else float(private_ane_max_rss_mb)
+            for module in model.modules():
+                if hasattr(module, 'private_ane_max_rss_mb'):
+                    module.private_ane_max_rss_mb = private_ane_max_rss_mb
+        private_ane_min_free_memory_percent = config.inference.get('private_ane_min_free_memory_percent', None)
+        if private_ane_min_free_memory_percent is not None:
+            private_ane_min_free_memory_percent = (
+                None if private_ane_min_free_memory_percent in ("", 0, "0")
+                else int(private_ane_min_free_memory_percent)
+            )
+            if (
+                    private_ane_min_free_memory_percent is not None
+                    and private_ane_min_free_memory_percent < MIN_PRIVATE_ANE_MIN_FREE_MEMORY_PERCENT
+            ):
+                raise ValueError(
+                    "private_ane_min_free_memory_percent must be >= "
+                    f"{MIN_PRIVATE_ANE_MIN_FREE_MEMORY_PERCENT}, or 0 to disable the soft guard"
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_min_free_memory_percent'):
+                    module.private_ane_min_free_memory_percent = private_ane_min_free_memory_percent
+        private_ane_emergency_free_memory_percent = config.inference.get(
+            'private_ane_emergency_free_memory_percent',
+            None,
+        )
+        if private_ane_emergency_free_memory_percent is not None:
+            private_ane_emergency_free_memory_percent = (
+                None if private_ane_emergency_free_memory_percent in ("", 0, "0")
+                else int(private_ane_emergency_free_memory_percent)
+            )
+            if (
+                    private_ane_emergency_free_memory_percent is not None
+                    and private_ane_emergency_free_memory_percent < MIN_PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT
+            ):
+                raise ValueError(
+                    "private_ane_emergency_free_memory_percent must be >= "
+                    f"{MIN_PRIVATE_ANE_EMERGENCY_FREE_MEMORY_PERCENT}, or 0 to disable"
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_emergency_free_memory_percent'):
+                    module.private_ane_emergency_free_memory_percent = private_ane_emergency_free_memory_percent
+        private_ane_free_memory_strikes = config.inference.get('private_ane_free_memory_strikes', None)
+        if private_ane_free_memory_strikes is not None:
+            private_ane_free_memory_strikes = int(private_ane_free_memory_strikes)
+            if private_ane_free_memory_strikes < 1:
+                raise ValueError("private_ane_free_memory_strikes must be >= 1")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_free_memory_strikes'):
+                    module.private_ane_free_memory_strikes = private_ane_free_memory_strikes
+        private_ane_max_ane_service_rss_mb = config.inference.get('private_ane_max_ane_service_rss_mb', None)
+        if private_ane_max_ane_service_rss_mb is not None:
+            private_ane_max_ane_service_rss_mb = (
+                None if private_ane_max_ane_service_rss_mb in ("", 0, "0")
+                else float(private_ane_max_ane_service_rss_mb)
+            )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_max_ane_service_rss_mb'):
+                    module.private_ane_max_ane_service_rss_mb = private_ane_max_ane_service_rss_mb
+        private_ane_max_swap_used_mb = config.inference.get('private_ane_max_swap_used_mb', None)
+        if private_ane_max_swap_used_mb is not None:
+            private_ane_max_swap_used_mb = (
+                None if private_ane_max_swap_used_mb in ("", 0, "0")
+                else float(private_ane_max_swap_used_mb)
+            )
+            if (
+                    private_ane_max_swap_used_mb is not None
+                    and (private_ane_max_swap_used_mb < 0 or private_ane_max_swap_used_mb > MAX_PRIVATE_ANE_MAX_SWAP_USED_MB)
+            ):
+                raise ValueError(
+                    "private_ane_max_swap_used_mb must be <= "
+                    f"{MAX_PRIVATE_ANE_MAX_SWAP_USED_MB}, or 0 to disable"
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_max_swap_used_mb'):
+                    module.private_ane_max_swap_used_mb = private_ane_max_swap_used_mb
+        private_ane_fuse_residual = config.inference.get('private_ane_fuse_residual', None)
+        if private_ane_fuse_residual is not None:
+            if isinstance(private_ane_fuse_residual, str):
+                private_ane_fuse_residual = private_ane_fuse_residual.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fuse_residual'):
+                    module.private_ane_fuse_residual = bool(private_ane_fuse_residual)
+        private_ane_fuse_gate_ffn = config.inference.get('private_ane_fuse_gate_ffn', None)
+        if private_ane_fuse_gate_ffn is not None:
+            if isinstance(private_ane_fuse_gate_ffn, str):
+                private_ane_fuse_gate_ffn = private_ane_fuse_gate_ffn.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fuse_gate_ffn'):
+                    module.private_ane_fuse_gate_ffn = bool(private_ane_fuse_gate_ffn)
+        private_ane_fuse_gate_ffn_max_work_items = config.inference.get(
+            'private_ane_fuse_gate_ffn_max_work_items',
+            None,
+        )
+        if private_ane_fuse_gate_ffn_max_work_items is not None:
+            private_ane_fuse_gate_ffn_max_work_items = int(private_ane_fuse_gate_ffn_max_work_items)
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fuse_gate_ffn_max_work_items'):
+                    module.private_ane_fuse_gate_ffn_max_work_items = private_ane_fuse_gate_ffn_max_work_items
+        private_ane_two_input_gate = config.inference.get('private_ane_two_input_gate', None)
+        if private_ane_two_input_gate is not None:
+            if isinstance(private_ane_two_input_gate, str):
+                private_ane_two_input_gate = private_ane_two_input_gate.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_two_input_gate'):
+                    module.private_ane_two_input_gate = bool(private_ane_two_input_gate)
+        private_ane_bridge_pack_gate = config.inference.get('private_ane_bridge_pack_gate', None)
+        if private_ane_bridge_pack_gate is not None:
+            if isinstance(private_ane_bridge_pack_gate, str):
+                private_ane_bridge_pack_gate = private_ane_bridge_pack_gate.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_bridge_pack_gate'):
+                    module.private_ane_bridge_pack_gate = bool(private_ane_bridge_pack_gate)
+        private_ane_bridge_client_variant = config.inference.get('private_ane_bridge_client_variant', None)
+        if private_ane_bridge_client_variant is not None:
+            private_ane_bridge_client_variant = str(private_ane_bridge_client_variant).strip().lower()
+            allowed_bridge_client_variants = {
+                "default",
+                "shared",
+                "private_shared",
+                "restricted_yes",
+                "restricted_no",
+            }
+            if private_ane_bridge_client_variant not in allowed_bridge_client_variants:
+                raise ValueError(
+                    "private_ane_bridge_client_variant must be one of "
+                    "'default', 'shared', 'private_shared', "
+                    "'restricted_yes', or 'restricted_no'"
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_bridge_client_variant'):
+                    module.private_ane_bridge_client_variant = private_ane_bridge_client_variant
+        private_ane_bridge_wrapper_route = config.inference.get('private_ane_bridge_wrapper_route', None)
+        if private_ane_bridge_wrapper_route is not None:
+            if isinstance(private_ane_bridge_wrapper_route, str):
+                normalized = private_ane_bridge_wrapper_route.strip().lower()
+                if normalized in ("default", "auto", "none"):
+                    private_ane_bridge_wrapper_route = "default"
+                elif normalized in ("1", "true", "yes", "on"):
+                    private_ane_bridge_wrapper_route = True
+                elif normalized in ("0", "false", "no", "off"):
+                    private_ane_bridge_wrapper_route = False
+                else:
+                    raise ValueError(
+                        "private_ane_bridge_wrapper_route must be one of "
+                        "'default', 'true', 'false', '1', '0', 'yes', 'no', 'on', or 'off'"
+                    )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_bridge_wrapper_route'):
+                    module.private_ane_bridge_wrapper_route = private_ane_bridge_wrapper_route
+        private_ane_surface_handoff_gate_ffn = config.inference.get('private_ane_surface_handoff_gate_ffn', None)
+        if private_ane_surface_handoff_gate_ffn is not None:
+            if isinstance(private_ane_surface_handoff_gate_ffn, str):
+                private_ane_surface_handoff_gate_ffn = (
+                    private_ane_surface_handoff_gate_ffn.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_surface_handoff_gate_ffn'):
+                    module.private_ane_surface_handoff_gate_ffn = bool(private_ane_surface_handoff_gate_ffn)
+        private_ane_batch_axis_eval = config.inference.get('private_ane_batch_axis_eval', None)
+        if private_ane_batch_axis_eval is not None:
+            if isinstance(private_ane_batch_axis_eval, str):
+                private_ane_batch_axis_eval = (
+                    private_ane_batch_axis_eval.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_batch_axis_eval'):
+                    module.private_ane_batch_axis_eval = bool(private_ane_batch_axis_eval)
+        private_ane_tiled_time_attention_pre = config.inference.get('private_ane_tiled_time_attention_pre', None)
+        if private_ane_tiled_time_attention_pre is not None:
+            if isinstance(private_ane_tiled_time_attention_pre, str):
+                private_ane_tiled_time_attention_pre = (
+                    private_ane_tiled_time_attention_pre.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_tiled_time_attention_pre'):
+                    module.private_ane_tiled_time_attention_pre = bool(private_ane_tiled_time_attention_pre)
+        private_ane_tiled_time_attention_pre_q_chunk = config.inference.get(
+            'private_ane_tiled_time_attention_pre_q_chunk',
+            None,
+        )
+        if private_ane_tiled_time_attention_pre_q_chunk is not None:
+            private_ane_tiled_time_attention_pre_q_chunk = int(private_ane_tiled_time_attention_pre_q_chunk)
+            if private_ane_tiled_time_attention_pre_q_chunk < 1:
+                raise ValueError("private_ane_tiled_time_attention_pre_q_chunk must be >= 1")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_tiled_time_attention_pre_q_chunk'):
+                    module.private_ane_tiled_time_attention_pre_q_chunk = (
+                        private_ane_tiled_time_attention_pre_q_chunk
+                    )
+        private_ane_direct_time_to_freq_unpadded = config.inference.get(
+            'private_ane_direct_time_to_freq_unpadded',
+            None,
+        )
+        if private_ane_direct_time_to_freq_unpadded is not None:
+            if isinstance(private_ane_direct_time_to_freq_unpadded, str):
+                private_ane_direct_time_to_freq_unpadded = (
+                    private_ane_direct_time_to_freq_unpadded.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_direct_time_to_freq_unpadded'):
+                    module.private_ane_direct_time_to_freq_unpadded = bool(
+                        private_ane_direct_time_to_freq_unpadded
+                    )
+        private_ane_transformer_hot_gc_interval = config.inference.get(
+            'private_ane_transformer_hot_gc_interval',
+            None,
+        )
+        if private_ane_transformer_hot_gc_interval is not None:
+            private_ane_transformer_hot_gc_interval = int(private_ane_transformer_hot_gc_interval)
+            if private_ane_transformer_hot_gc_interval < 0:
+                raise ValueError("private_ane_transformer_hot_gc_interval must be >= 0")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_transformer_hot_gc_interval'):
+                    module.private_ane_transformer_hot_gc_interval = private_ane_transformer_hot_gc_interval
+        private_ane_transformer_guard_interval = config.inference.get(
+            'private_ane_transformer_guard_interval',
+            None,
+        )
+        if private_ane_transformer_guard_interval is not None:
+            private_ane_transformer_guard_interval = int(private_ane_transformer_guard_interval)
+            if private_ane_transformer_guard_interval < 0:
+                raise ValueError("private_ane_transformer_guard_interval must be >= 0")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_transformer_guard_interval'):
+                    module.private_ane_transformer_guard_interval = private_ane_transformer_guard_interval
+        private_ane_fused_band_split = config.inference.get('private_ane_fused_band_split', None)
+        if private_ane_fused_band_split is not None:
+            if isinstance(private_ane_fused_band_split, str):
+                private_ane_fused_band_split = (
+                    private_ane_fused_band_split.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fused_band_split'):
+                    module.private_ane_fused_band_split = bool(private_ane_fused_band_split)
+        private_ane_fused_band_split_max_outputs = config.inference.get(
+            'private_ane_fused_band_split_max_outputs',
+            None,
+        )
+        if private_ane_fused_band_split_max_outputs is not None:
+            private_ane_fused_band_split_max_outputs = int(private_ane_fused_band_split_max_outputs)
+            if private_ane_fused_band_split_max_outputs < 1:
+                raise ValueError("private_ane_fused_band_split_max_outputs must be >= 1")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fused_band_split_max_outputs'):
+                    module.private_ane_fused_band_split_max_outputs = private_ane_fused_band_split_max_outputs
+        private_ane_fused_mask_estimator = config.inference.get('private_ane_fused_mask_estimator', None)
+        if private_ane_fused_mask_estimator is not None:
+            if isinstance(private_ane_fused_mask_estimator, str):
+                private_ane_fused_mask_estimator = (
+                    private_ane_fused_mask_estimator.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fused_mask_estimator'):
+                    module.private_ane_fused_mask_estimator = bool(private_ane_fused_mask_estimator)
+        private_ane_fused_mask_estimator_max_outputs = config.inference.get(
+            'private_ane_fused_mask_estimator_max_outputs',
+            None,
+        )
+        if private_ane_fused_mask_estimator_max_outputs is not None:
+            private_ane_fused_mask_estimator_max_outputs = int(private_ane_fused_mask_estimator_max_outputs)
+            if private_ane_fused_mask_estimator_max_outputs < 1:
+                raise ValueError("private_ane_fused_mask_estimator_max_outputs must be >= 1")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fused_mask_estimator_max_outputs'):
+                    module.private_ane_fused_mask_estimator_max_outputs = private_ane_fused_mask_estimator_max_outputs
+        private_ane_persistent_aux_handles = config.inference.get('private_ane_persistent_aux_handles', None)
+        if private_ane_persistent_aux_handles is not None:
+            if isinstance(private_ane_persistent_aux_handles, str):
+                private_ane_persistent_aux_handles = (
+                    private_ane_persistent_aux_handles.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_persistent_aux_handles'):
+                    module.private_ane_persistent_aux_handles = bool(private_ane_persistent_aux_handles)
+        private_ane_dynamic_stft = config.inference.get('private_ane_dynamic_stft', None)
+        if private_ane_dynamic_stft is not None:
+            if isinstance(private_ane_dynamic_stft, str):
+                private_ane_dynamic_stft = private_ane_dynamic_stft.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_dynamic_stft'):
+                    module.private_ane_dynamic_stft = bool(private_ane_dynamic_stft)
+        private_ane_dynamic_stft_max_outputs = config.inference.get('private_ane_dynamic_stft_max_outputs', None)
+        if private_ane_dynamic_stft_max_outputs not in (None, ""):
+            private_ane_dynamic_stft_max_outputs = int(private_ane_dynamic_stft_max_outputs)
+            if private_ane_dynamic_stft_max_outputs < 0:
+                raise ValueError("private_ane_dynamic_stft_max_outputs must be >= 0")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_dynamic_stft_max_outputs'):
+                    module.private_ane_dynamic_stft_max_outputs = private_ane_dynamic_stft_max_outputs
+        private_ane_native_dynamic_stft_input_weights = config.inference.get(
+            'private_ane_native_dynamic_stft_input_weights',
+            None,
+        )
+        if private_ane_native_dynamic_stft_input_weights is not None:
+            if isinstance(private_ane_native_dynamic_stft_input_weights, str):
+                private_ane_native_dynamic_stft_input_weights = (
+                    private_ane_native_dynamic_stft_input_weights.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_native_dynamic_stft_input_weights'):
+                    module.private_ane_native_dynamic_stft_input_weights = bool(
+                        private_ane_native_dynamic_stft_input_weights
+                    )
+        private_ane_fused_stft = config.inference.get('private_ane_fused_stft', None)
+        if private_ane_fused_stft is not None:
+            if isinstance(private_ane_fused_stft, str):
+                private_ane_fused_stft = private_ane_fused_stft.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fused_stft'):
+                    module.private_ane_fused_stft = bool(private_ane_fused_stft)
+        private_ane_fused_stft_max_outputs = config.inference.get('private_ane_fused_stft_max_outputs', None)
+        if private_ane_fused_stft_max_outputs is not None:
+            private_ane_fused_stft_max_outputs = int(private_ane_fused_stft_max_outputs)
+            if private_ane_fused_stft_max_outputs < 1:
+                raise ValueError("private_ane_fused_stft_max_outputs must be >= 1")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_fused_stft_max_outputs'):
+                    module.private_ane_fused_stft_max_outputs = private_ane_fused_stft_max_outputs
+        private_ane_persistent_stft_handles = config.inference.get('private_ane_persistent_stft_handles', None)
+        if private_ane_persistent_stft_handles is not None:
+            if isinstance(private_ane_persistent_stft_handles, str):
+                private_ane_persistent_stft_handles = (
+                    private_ane_persistent_stft_handles.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_persistent_stft_handles'):
+                    module.private_ane_persistent_stft_handles = bool(private_ane_persistent_stft_handles)
+        private_ane_preload_stft_handles = config.inference.get('private_ane_preload_stft_handles', None)
+        if private_ane_preload_stft_handles is not None:
+            if isinstance(private_ane_preload_stft_handles, str):
+                private_ane_preload_stft_handles = (
+                    private_ane_preload_stft_handles.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_preload_stft_handles'):
+                    module.private_ane_preload_stft_handles = bool(private_ane_preload_stft_handles)
+        private_ane_stft_bridge_qos = config.inference.get('private_ane_stft_bridge_qos', None)
+        if private_ane_stft_bridge_qos is not None:
+            for module in model.modules():
+                if hasattr(module, 'private_ane_stft_bridge_qos'):
+                    module.private_ane_stft_bridge_qos = private_ane_stft_bridge_qos
+        private_ane_stft_atomic_writes = config.inference.get('private_ane_stft_atomic_writes', None)
+        if private_ane_stft_atomic_writes is not None:
+            for module in model.modules():
+                if hasattr(module, 'private_ane_stft_atomic_writes'):
+                    module.private_ane_stft_atomic_writes = private_ane_stft_atomic_writes
+        private_ane_stft_cache_tmpdir = config.inference.get('private_ane_stft_cache_tmpdir', None)
+        if private_ane_stft_cache_tmpdir not in (None, ""):
+            for module in model.modules():
+                if hasattr(module, 'private_ane_stft_cache_tmpdir'):
+                    module.private_ane_stft_cache_tmpdir = str(private_ane_stft_cache_tmpdir)
+        private_ane_stft_keep_tmpdir = config.inference.get('private_ane_stft_keep_tmpdir', None)
+        if private_ane_stft_keep_tmpdir is not None:
+            if isinstance(private_ane_stft_keep_tmpdir, str):
+                private_ane_stft_keep_tmpdir = private_ane_stft_keep_tmpdir.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_stft_keep_tmpdir'):
+                    module.private_ane_stft_keep_tmpdir = bool(private_ane_stft_keep_tmpdir)
+        private_ane_release_aux_handles_before_istft = config.inference.get(
+            'private_ane_release_aux_handles_before_istft',
+            None,
+        )
+        if private_ane_release_aux_handles_before_istft is not None:
+            if isinstance(private_ane_release_aux_handles_before_istft, str):
+                private_ane_release_aux_handles_before_istft = (
+                    private_ane_release_aux_handles_before_istft.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_release_aux_handles_before_istft'):
+                    module.private_ane_release_aux_handles_before_istft = bool(
+                        private_ane_release_aux_handles_before_istft
+                    )
+        private_ane_stft_istft_batch_channels = config.inference.get(
+            'private_ane_stft_istft_batch_channels',
+            None,
+        )
+        if private_ane_stft_istft_batch_channels is not None:
+            if isinstance(private_ane_stft_istft_batch_channels, str):
+                private_ane_stft_istft_batch_channels = (
+                    private_ane_stft_istft_batch_channels.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_stft_istft_batch_channels'):
+                    module.private_ane_stft_istft_batch_channels = bool(private_ane_stft_istft_batch_channels)
+        private_ane_gpu_final_norm_mask = config.inference.get('private_ane_gpu_final_norm_mask', None)
+        if private_ane_gpu_final_norm_mask is not None:
+            if isinstance(private_ane_gpu_final_norm_mask, str):
+                private_ane_gpu_final_norm_mask = (
+                    private_ane_gpu_final_norm_mask.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_gpu_final_norm_mask'):
+                    module.private_ane_gpu_final_norm_mask = bool(private_ane_gpu_final_norm_mask)
+        private_ane_gpu_istft = config.inference.get('private_ane_gpu_istft', None)
+        if private_ane_gpu_istft is not None:
+            if isinstance(private_ane_gpu_istft, str):
+                private_ane_gpu_istft = private_ane_gpu_istft.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_gpu_istft'):
+                    module.private_ane_gpu_istft = bool(private_ane_gpu_istft)
+        private_ane_allow_torch_fallback = config.inference.get('private_ane_allow_torch_fallback', None)
+        if private_ane_allow_torch_fallback is not None:
+            if isinstance(private_ane_allow_torch_fallback, str):
+                private_ane_allow_torch_fallback = (
+                    private_ane_allow_torch_fallback.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_allow_torch_fallback'):
+                    module.private_ane_allow_torch_fallback = bool(private_ane_allow_torch_fallback)
+        private_ane_load_cache = config.inference.get('private_ane_load_cache', None)
+        if private_ane_load_cache is not None:
+            if isinstance(private_ane_load_cache, str):
+                private_ane_load_cache = private_ane_load_cache.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_load_cache'):
+                    module.private_ane_load_cache = bool(private_ane_load_cache)
+        private_ane_cache_tmpdir = config.inference.get('private_ane_cache_tmpdir', None)
+        if private_ane_cache_tmpdir not in (None, ""):
+            for module in model.modules():
+                if hasattr(module, 'private_ane_cache_tmpdir'):
+                    module.private_ane_cache_tmpdir = str(private_ane_cache_tmpdir)
+        private_ane_keep_tmpdir = config.inference.get('private_ane_keep_tmpdir', None)
+        if private_ane_keep_tmpdir is not None:
+            if isinstance(private_ane_keep_tmpdir, str):
+                private_ane_keep_tmpdir = private_ane_keep_tmpdir.lower() in ("1", "true", "yes", "on")
+            for module in model.modules():
+                if hasattr(module, 'private_ane_keep_tmpdir'):
+                    module.private_ane_keep_tmpdir = bool(private_ane_keep_tmpdir)
+        private_ane_skip_source_write_on_cache_hit = config.inference.get(
+            'private_ane_skip_source_write_on_cache_hit',
+            None,
+        )
+        if private_ane_skip_source_write_on_cache_hit is not None:
+            if isinstance(private_ane_skip_source_write_on_cache_hit, str):
+                private_ane_skip_source_write_on_cache_hit = (
+                    private_ane_skip_source_write_on_cache_hit.lower() in ("1", "true", "yes", "on")
+                )
+            for module in model.modules():
+                if hasattr(module, 'private_ane_skip_source_write_on_cache_hit'):
+                    module.private_ane_skip_source_write_on_cache_hit = bool(
+                        private_ane_skip_source_write_on_cache_hit
+                    )
+        coreml_ane_package_root = config.inference.get('coreml_ane_package_root', None)
+        coreml_ane_compute_unit = config.inference.get('coreml_ane_compute_unit', None)
+        coreml_ane_storage = config.inference.get('coreml_ane_storage', None)
+        coreml_ane_memmap_dir = config.inference.get('coreml_ane_memmap_dir', None)
+        coreml_ane_keep_memmap = config.inference.get('coreml_ane_keep_memmap', None)
+        if any(value is not None for value in (
+            coreml_ane_package_root,
+            coreml_ane_compute_unit,
+            coreml_ane_storage,
+            coreml_ane_memmap_dir,
+            coreml_ane_keep_memmap,
+        )):
+            for module in model.modules():
+                if hasattr(module, 'set_coreml_ane_config'):
+                    module.set_coreml_ane_config(
+                        coreml_ane_package_root,
+                        coreml_ane_compute_unit,
+                        coreml_ane_storage,
+                        coreml_ane_memmap_dir,
+                        coreml_ane_keep_memmap,
+                    )
         backend = config.inference.get('mps_attention_backend', None)
         min_tokens = config.inference.get('mps_mlx_min_tokens', 128)
         if backend is not None:
