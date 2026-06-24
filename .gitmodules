@@ -1,0 +1,4 @@
+[submodule "mps/maderix_ANE"]
+	path = mps/maderix_ANE
+	url = https://github.com/baicai-1145/ANE.git
+	branch = pymss-maderix-ane-preview
