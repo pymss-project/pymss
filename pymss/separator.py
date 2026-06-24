@@ -342,6 +342,17 @@ def _coerce_mps_float64(module):
                 child._buffers[name] = buffer.float()
 
 
+def _coerce_cpu_low_precision(module):
+    """Run CPU inference in float32 when checkpoints store fp16/bf16 weights."""
+    for child in module.modules():
+        for name, param in list(child._parameters.items()):
+            if param is not None and param.dtype in {torch.float16, torch.bfloat16}:
+                child._parameters[name] = torch.nn.Parameter(param.detach().float(), requires_grad=param.requires_grad)
+        for name, buffer in list(child._buffers.items()):
+            if buffer is not None and buffer.dtype in {torch.float16, torch.bfloat16}:
+                child._buffers[name] = buffer.float()
+
+
 def _model_is_stereo(model_type, config):
     """Implement the model is stereo helper.
 
@@ -989,6 +1000,8 @@ class MSSeparator:
             model.load_state_dict(state_dict)
         if torch.device(self.device).type == "mps":
             _coerce_mps_float64(model)
+        if torch.device(self.device).type == "cpu":
+            _coerce_cpu_low_precision(model)
 
         keep_torch_model_cpu = _store_torch_model_on_cpu_for_mlx(config, self.device)
         if len(self.device_ids) > 1 and not keep_torch_model_cpu:

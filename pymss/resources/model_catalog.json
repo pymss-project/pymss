@@ -87,31 +87,6 @@
       "classification_basis": "config restored/addition + vocal/apollo; classified as audio restoration"
     },
     {
-      "name": "epoch=54-val_loss=-17.6221.ckpt",
-      "aliases": [
-        "epoch=54-val_loss=-17.6221.ckpt",
-        "epoch=54-val_loss=-17.6221"
-      ],
-      "model_type": "apollo",
-      "architecture": "apollo",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "cleanup/audio_restoration/epoch=54-val_loss=-17.6221.ckpt",
-      "config_relpath": "cleanup/audio_restoration/epoch=54-val_loss=-17.6221.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 615867827,
-      "sha256": "",
-      "primary_category": "cleanup",
-      "primary_category_cn": "音频清理/修复",
-      "secondary_category": "audio_restoration",
-      "secondary_category_cn": "音频/人声修复",
-      "target_stem": "restored_vocal",
-      "config_instruments": "restored|addition",
-      "config_target_instrument": "restored",
-      "classification_confidence": "high",
-      "classification_basis": "config restored/addition + vocal/apollo; classified as audio restoration"
-    },
-    {
       "name": "model_apollo_vocals_ep_54.ckpt",
       "aliases": [
         "model_apollo_vocals_ep_54.ckpt",
@@ -210,31 +185,6 @@
       "config_target_instrument": "dry",
       "classification_confidence": "high",
       "classification_basis": "denoise 名称"
-    },
-    {
-      "name": "huge_scnet_4stems_bleedless.ckpt",
-      "aliases": [
-        "huge_scnet_4stems_bleedless.ckpt",
-        "huge_scnet_4stems_bleedless"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "cleanup/noise_bleed_control/huge_scnet_4stems_bleedless.ckpt",
-      "config_relpath": "cleanup/noise_bleed_control/huge_scnet_4stems_bleedless.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 395602493,
-      "sha256": "",
-      "primary_category": "cleanup",
-      "primary_category_cn": "音频清理/修复",
-      "secondary_category": "noise_bleed_control",
-      "secondary_category_cn": "降噪/串音抑制",
-      "target_stem": "bleed",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "bleed/debleed/bleedless 名称"
     },
     {
       "name": "kimmel_unwa_ft2_bleedless.ckpt",
@@ -425,31 +375,6 @@
       "config_relpath": "experimental_general/BS-Roformer_LargeV1.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 740263433,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
-      "name": "bs_hyperace.ckpt",
-      "aliases": [
-        "bs_hyperace.ckpt",
-        "bs_hyperace"
-      ],
-      "model_type": "bs_roformer",
-      "architecture": "bs_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "experimental_general/bs_hyperace.ckpt",
-      "config_relpath": "experimental_general/bs_hyperace.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 274890855,
       "sha256": "",
       "primary_category": "experimental_general",
       "primary_category_cn": "实验/通用分离",
@@ -862,31 +787,6 @@
       "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
     },
     {
-      "name": "MDX23C_D1581.ckpt",
-      "aliases": [
-        "MDX23C_D1581.ckpt",
-        "MDX23C_D1581"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "experimental_general/MDX23C_D1581.ckpt",
-      "config_relpath": "experimental_general/MDX23C_D1581.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 183379219,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
       "name": "mel_band_roformer_small.ckpt",
       "aliases": [
         "mel_band_roformer_small.ckpt",
@@ -1212,81 +1112,6 @@
       "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
     },
     {
-      "name": "model_jazz_scnet_large.ckpt",
-      "aliases": [
-        "model_jazz_scnet_large.ckpt",
-        "model_jazz_scnet_large"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "experimental_general/model_jazz_scnet_large.ckpt",
-      "config_relpath": "experimental_general/model_jazz_scnet_large.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 168869389,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "drums|bass|piano|other",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
-      "name": "model_jazz_scnet_xl.ckpt",
-      "aliases": [
-        "model_jazz_scnet_xl.ckpt",
-        "model_jazz_scnet_xl"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "experimental_general/model_jazz_scnet_xl.ckpt",
-      "config_relpath": "experimental_general/model_jazz_scnet_xl.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 216190397,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "drums|bass|piano|other",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
-      "name": "model_jazz_split_scnet.ckpt",
-      "aliases": [
-        "model_jazz_split_scnet.ckpt",
-        "model_jazz_split_scnet"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "experimental_general/model_jazz_split_scnet.ckpt",
-      "config_relpath": "experimental_general/model_jazz_split_scnet.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 42434765,
-      "sha256": "",
-      "primary_category": "experimental_general",
-      "primary_category_cn": "实验/通用分离",
-      "secondary_category": "",
-      "secondary_category_cn": "通用源分离",
-      "target_stem": "",
-      "config_instruments": "drums|bass|piano|other",
-      "config_target_instrument": "",
-      "classification_confidence": "low",
-      "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
       "name": "model_mel_band_roformer_ep_3_sdr_14.8359.ckpt",
       "aliases": [
         "model_mel_band_roformer_ep_3_sdr_14.8359.ckpt",
@@ -1310,31 +1135,6 @@
       "config_target_instrument": "dry",
       "classification_confidence": "low",
       "classification_basis": "只有架构/SDR 信息，未见明确能力关键词"
-    },
-    {
-      "name": "bs_large_v2_inst.ckpt",
-      "aliases": [
-        "bs_large_v2_inst.ckpt",
-        "bs_large_v2_inst"
-      ],
-      "model_type": "bs_roformer",
-      "architecture": "bs_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "instrumental/bs_large_v2_inst.ckpt",
-      "config_relpath": "instrumental/bs_large_v2_inst.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 238214371,
-      "sha256": "",
-      "primary_category": "instrumental",
-      "primary_category_cn": "伴奏/无人声提取",
-      "secondary_category": "",
-      "secondary_category_cn": "伴奏/无人声提取",
-      "target_stem": "instrumental",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "medium",
-      "classification_basis": "inst/instrumental 名称"
     },
     {
       "name": "bs_roformer_inst_hyperacev2.ckpt",
@@ -2187,31 +1987,6 @@
       "classification_basis": "config target_instrument=instrumental"
     },
     {
-      "name": "small_inst.ckpt",
-      "aliases": [
-        "small_inst.ckpt",
-        "small_inst"
-      ],
-      "model_type": "mel_band_roformer",
-      "architecture": "mel_band_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "instrumental/small_inst.ckpt",
-      "config_relpath": "instrumental/small_inst.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 202573672,
-      "sha256": "",
-      "primary_category": "instrumental",
-      "primary_category_cn": "伴奏/无人声提取",
-      "secondary_category": "",
-      "secondary_category_cn": "伴奏/无人声提取",
-      "target_stem": "instrumental",
-      "config_instruments": "Instrumental|Vocals",
-      "config_target_instrument": "Instrumental",
-      "classification_confidence": "high",
-      "classification_basis": "config target_instrument=instrumental"
-    },
-    {
       "name": "bs_karaoke_gabox_IS.ckpt",
       "aliases": [
         "bs_karaoke_gabox_IS.ckpt",
@@ -2282,31 +2057,6 @@
       "secondary_category_cn": "卡拉OK/和声",
       "target_stem": "backing_vocal",
       "config_instruments": "Vocals|Instrumental",
-      "config_target_instrument": "Vocals",
-      "classification_confidence": "high",
-      "classification_basis": "config target_instrument=vocals; karaoke 作为和声/伴唱用途"
-    },
-    {
-      "name": "Karaoke_GaboxV1.ckpt",
-      "aliases": [
-        "Karaoke_GaboxV1.ckpt",
-        "Karaoke_GaboxV1"
-      ],
-      "model_type": "mel_band_roformer",
-      "architecture": "mel_band_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "karaoke/Karaoke_GaboxV1.ckpt",
-      "config_relpath": "karaoke/Karaoke_GaboxV1.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 913090472,
-      "sha256": "",
-      "primary_category": "karaoke",
-      "primary_category_cn": "卡拉OK/和声",
-      "secondary_category": "",
-      "secondary_category_cn": "卡拉OK/和声",
-      "target_stem": "backing_vocal",
-      "config_instruments": "Instrumental|Vocals",
       "config_target_instrument": "Vocals",
       "classification_confidence": "high",
       "classification_basis": "config target_instrument=vocals; karaoke 作为和声/伴唱用途"
@@ -3762,31 +3512,6 @@
       "classification_basis": "Wind_Inst 名称"
     },
     {
-      "name": "checkpoint-multi_fixed.ckpt",
-      "aliases": [
-        "checkpoint-multi_fixed.ckpt",
-        "checkpoint-multi_fixed"
-      ],
-      "model_type": "bandit",
-      "architecture": "unknown",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/dnr_stems/checkpoint-multi_fixed.ckpt",
-      "config_relpath": "music_stems/dnr_stems/checkpoint-multi_fixed.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 149133378,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "dnr_stems",
-      "secondary_category_cn": "DNR 对话/音乐/音效分轨",
-      "target_stem": "speech/music/effects",
-      "config_instruments": "Speech|Music|Effects",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config instruments=speech/music/effects"
-    },
-    {
       "name": "model_bandit_plus_dnr_sdr_11.47.ckpt",
       "aliases": [
         "model_bandit_plus_dnr_sdr_11.47.ckpt",
@@ -3812,56 +3537,6 @@
       "classification_basis": "DNR 名称"
     },
     {
-      "name": "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt",
-      "aliases": [
-        "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt",
-        "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/drum_stems/aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt",
-      "config_relpath": "music_stems/drum_stems/aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 437652699,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "drum_stems",
-      "secondary_category_cn": "鼓组细分",
-      "target_stem": "drums",
-      "config_instruments": "kick|snare|toms|hh|ride|crash",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "drumsep 名称"
-    },
-    {
-      "name": "drumsep_5stems_mdx23c_jarredou.ckpt",
-      "aliases": [
-        "drumsep_5stems_mdx23c_jarredou.ckpt",
-        "drumsep_5stems_mdx23c_jarredou"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/drum_stems/drumsep_5stems_mdx23c_jarredou.ckpt",
-      "config_relpath": "music_stems/drum_stems/drumsep_5stems_mdx23c_jarredou.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 437648758,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "drum_stems",
-      "secondary_category_cn": "鼓组细分",
-      "target_stem": "drums",
-      "config_instruments": "kick|snare|toms|hh|ride|crash",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "drumsep 名称"
-    },
-    {
       "name": "gilliaan_drumsV1.ckpt",
       "aliases": [
         "gilliaan_drumsV1.ckpt",
@@ -3885,31 +3560,6 @@
       "config_target_instrument": "",
       "classification_confidence": "high",
       "classification_basis": "DrumsOther Duality 名称"
-    },
-    {
-      "name": "model_drumsep.th",
-      "aliases": [
-        "model_drumsep.th",
-        "model_drumsep"
-      ],
-      "model_type": "htdemucs",
-      "architecture": "demucs",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/drum_stems/model_drumsep.th",
-      "config_relpath": "music_stems/drum_stems/model_drumsep.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 167400043,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "drum_stems",
-      "secondary_category_cn": "鼓组细分",
-      "target_stem": "drums",
-      "config_instruments": "kick|snare|cymbals|toms",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "drumsep 名称"
     },
     {
       "name": "bs_roformer_4stems_ft.ckpt",
@@ -3950,81 +3600,6 @@
       "config_relpath": "music_stems/four_stem/HTDemucs4.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 84141911,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "4 stems/MUSDB/HTDemucs4 名称"
-    },
-    {
-      "name": "huge_scnet_4stems_fullness.ckpt",
-      "aliases": [
-        "huge_scnet_4stems_fullness.ckpt",
-        "huge_scnet_4stems_fullness"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/huge_scnet_4stems_fullness.ckpt",
-      "config_relpath": "music_stems/four_stem/huge_scnet_4stems_fullness.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 395597693,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "4 stems/MUSDB/HTDemucs4 名称"
-    },
-    {
-      "name": "huge_scnet_4stems_strong_fullness.ckpt",
-      "aliases": [
-        "huge_scnet_4stems_strong_fullness.ckpt",
-        "huge_scnet_4stems_strong_fullness"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/huge_scnet_4stems_strong_fullness.ckpt",
-      "config_relpath": "music_stems/four_stem/huge_scnet_4stems_strong_fullness.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 395598013,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "4 stems/MUSDB/HTDemucs4 名称"
-    },
-    {
-      "name": "huge_scnet_4stems_v1.2.ckpt",
-      "aliases": [
-        "huge_scnet_4stems_v1.2.ckpt",
-        "huge_scnet_4stems_v1.2"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/huge_scnet_4stems_v1.2.ckpt",
-      "config_relpath": "music_stems/four_stem/huge_scnet_4stems_v1.2.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 395599229,
       "sha256": "",
       "primary_category": "music_stems",
       "primary_category_cn": "音乐多轨/分轨",
@@ -4132,31 +3707,6 @@
       "secondary_category_cn": "四轨分离",
       "target_stem": "drums/bass/other/vocals",
       "config_instruments": "drums|bass|other|vocals",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 4 stems"
-    },
-    {
-      "name": "model_mdx23c_ep_168_sdr_7.0207.ckpt",
-      "aliases": [
-        "model_mdx23c_ep_168_sdr_7.0207.ckpt",
-        "model_mdx23c_ep_168_sdr_7.0207"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/model_mdx23c_ep_168_sdr_7.0207.ckpt",
-      "config_relpath": "music_stems/four_stem/model_mdx23c_ep_168_sdr_7.0207.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 448119834,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "vocals|bass|drums|other",
       "config_target_instrument": "",
       "classification_confidence": "high",
       "classification_basis": "config 4 stems"
@@ -4437,56 +3987,6 @@
       "classification_basis": "config 4 stems"
     },
     {
-      "name": "model_scnet_masked_ep_111_sdr_9.8286.ckpt",
-      "aliases": [
-        "model_scnet_masked_ep_111_sdr_9.8286.ckpt",
-        "model_scnet_masked_ep_111_sdr_9.8286"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/model_scnet_masked_ep_111_sdr_9.8286.ckpt",
-      "config_relpath": "music_stems/four_stem/model_scnet_masked_ep_111_sdr_9.8286.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 214143287,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "drums|bass|other|vocals",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 4 stems"
-    },
-    {
-      "name": "model_scnet_masked_ep_156_sdr_8.8149.ckpt",
-      "aliases": [
-        "model_scnet_masked_ep_156_sdr_8.8149.ckpt",
-        "model_scnet_masked_ep_156_sdr_8.8149"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/model_scnet_masked_ep_156_sdr_8.8149.ckpt",
-      "config_relpath": "music_stems/four_stem/model_scnet_masked_ep_156_sdr_8.8149.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 42517058,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "drums|bass|other|vocals",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 4 stems"
-    },
-    {
       "name": "model_scnet_sdr_9.3244.ckpt",
       "aliases": [
         "model_scnet_sdr_9.3244.ckpt",
@@ -4500,31 +4000,6 @@
       "config_relpath": "music_stems/four_stem/model_scnet_sdr_9.3244.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 168868194,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "four_stem",
-      "secondary_category_cn": "四轨分离",
-      "target_stem": "drums/bass/other/vocals",
-      "config_instruments": "drums|bass|other|vocals",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 4 stems"
-    },
-    {
-      "name": "model_scnet_tran_sdr_8.9272.ckpt",
-      "aliases": [
-        "model_scnet_tran_sdr_8.9272.ckpt",
-        "model_scnet_tran_sdr_8.9272"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/four_stem/model_scnet_tran_sdr_8.9272.ckpt",
-      "config_relpath": "music_stems/four_stem/model_scnet_tran_sdr_8.9272.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 41696502,
       "sha256": "",
       "primary_category": "music_stems",
       "primary_category_cn": "音乐多轨/分轨",
@@ -5987,31 +5462,6 @@
       "classification_basis": "config 6 stems"
     },
     {
-      "name": "gabox_karaoke_25_02_2025.ckpt",
-      "aliases": [
-        "gabox_karaoke_25_02_2025.ckpt",
-        "gabox_karaoke_25_02_2025"
-      ],
-      "model_type": "mel_band_roformer",
-      "architecture": "mel_band_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "music_stems/six_stem/gabox_karaoke_25_02_2025.ckpt",
-      "config_relpath": "music_stems/six_stem/gabox_karaoke_25_02_2025.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 913026650,
-      "sha256": "",
-      "primary_category": "music_stems",
-      "primary_category_cn": "音乐多轨/分轨",
-      "secondary_category": "six_stem",
-      "secondary_category_cn": "六轨分离",
-      "target_stem": "drums/bass/other/vocals/guitar/piano",
-      "config_instruments": "bass|drums|other|vocals|guitar|piano",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config 6 stems"
-    },
-    {
       "name": "HTDemucs4_6stems.th",
       "aliases": [
         "HTDemucs4_6stems.th",
@@ -6100,31 +5550,6 @@
       "config_relpath": "reverb_echo_control/dereverb/dereverb_bs_roformer_anvuew_sdr_22.5050.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 204496717,
-      "sha256": "",
-      "primary_category": "reverb_echo_control",
-      "primary_category_cn": "混响/回声处理",
-      "secondary_category": "dereverb",
-      "secondary_category_cn": "去混响",
-      "target_stem": "reverb",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "dereverb/deverb/de_big_reverb/room 名称"
-    },
-    {
-      "name": "dereverb_mdx23c_sdr_6.9096.ckpt",
-      "aliases": [
-        "dereverb_mdx23c_sdr_6.9096.ckpt",
-        "dereverb_mdx23c_sdr_6.9096"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "reverb_echo_control/dereverb/dereverb_mdx23c_sdr_6.9096.ckpt",
-      "config_relpath": "reverb_echo_control/dereverb/dereverb_mdx23c_sdr_6.9096.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 448098867,
       "sha256": "",
       "primary_category": "reverb_echo_control",
       "primary_category_cn": "混响/回声处理",
@@ -6762,31 +6187,6 @@
       "classification_basis": "phantom/center/wide 名称"
     },
     {
-      "name": "gilliaan_mdx23c_centerwide_v1.ckpt",
-      "aliases": [
-        "gilliaan_mdx23c_centerwide_v1.ckpt",
-        "gilliaan_mdx23c_centerwide_v1"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "spatial/phantom_center_wide/gilliaan_mdx23c_centerwide_v1.ckpt",
-      "config_relpath": "spatial/phantom_center_wide/gilliaan_mdx23c_centerwide_v1.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 437617081,
-      "sha256": "",
-      "primary_category": "spatial",
-      "primary_category_cn": "声像/空间分离",
-      "secondary_category": "phantom_center_wide",
-      "secondary_category_cn": "中央/宽声像提取",
-      "target_stem": "center/wide",
-      "config_instruments": "center|wide",
-      "config_target_instrument": "wide",
-      "classification_confidence": "high",
-      "classification_basis": "phantom/center/wide 名称"
-    },
-    {
       "name": "gilliaan_scnet_centerwide_dual.ckpt",
       "aliases": [
         "gilliaan_scnet_centerwide_dual.ckpt",
@@ -6833,31 +6233,6 @@
       "target_stem": "similarity/difference",
       "config_instruments": "similarity|difference",
       "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config instruments=Similarity/Difference"
-    },
-    {
-      "name": "model_mdx23c_ep_271_l1_freq_72.2383.ckpt",
-      "aliases": [
-        "model_mdx23c_ep_271_l1_freq_72.2383.ckpt",
-        "model_mdx23c_ep_271_l1_freq_72.2383"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "special/model_mdx23c_ep_271_l1_freq_72.2383.ckpt",
-      "config_relpath": "special/model_mdx23c_ep_271_l1_freq_72.2383.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 437613512,
-      "sha256": "",
-      "primary_category": "special",
-      "primary_category_cn": "特殊目标/差异提取",
-      "secondary_category": "",
-      "secondary_category_cn": "相似/差异分离",
-      "target_stem": "similarity/difference",
-      "config_instruments": "similarity|difference",
-      "config_target_instrument": "similarity",
       "classification_confidence": "high",
       "classification_basis": "config instruments=Similarity/Difference"
     },
@@ -7012,56 +6387,6 @@
       "classification_basis": "choir 名称"
     },
     {
-      "name": "model_scnet_masked_ep_14_sdr_6.3693.ckpt",
-      "aliases": [
-        "model_scnet_masked_ep_14_sdr_6.3693.ckpt",
-        "model_scnet_masked_ep_14_sdr_6.3693"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/choir_vocal/model_scnet_masked_ep_14_sdr_6.3693.ckpt",
-      "config_relpath": "vocal/choir_vocal/model_scnet_masked_ep_14_sdr_6.3693.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 42522921,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "choir_vocal",
-      "secondary_category_cn": "合唱/人群歌声分离",
-      "target_stem": "choir",
-      "config_instruments": "soprano|alto|tenor|bass",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "choir 名称"
-    },
-    {
-      "name": "model_scnet_masked_ep_14_sdr_6.9052.ckpt",
-      "aliases": [
-        "model_scnet_masked_ep_14_sdr_6.9052.ckpt",
-        "model_scnet_masked_ep_14_sdr_6.9052"
-      ],
-      "model_type": "scnet",
-      "architecture": "scnet",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/choir_vocal/model_scnet_masked_ep_14_sdr_6.9052.ckpt",
-      "config_relpath": "vocal/choir_vocal/model_scnet_masked_ep_14_sdr_6.9052.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 42522921,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "choir_vocal",
-      "secondary_category_cn": "合唱/人群歌声分离",
-      "target_stem": "choir",
-      "config_instruments": "soprano|alto|tenor|bass",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "choir 名称"
-    },
-    {
       "name": "model_mel_band_roformer_ep_0_sdr_7.9319_fixed.ckpt",
       "aliases": [
         "model_mel_band_roformer_ep_0_sdr_7.9319_fixed.ckpt",
@@ -7135,31 +6460,6 @@
       "config_target_instrument": "",
       "classification_confidence": "high",
       "classification_basis": "speech 名称"
-    },
-    {
-      "name": "16k_Vocal_Lightweight_MelBandRoformer.ckpt",
-      "aliases": [
-        "16k_Vocal_Lightweight_MelBandRoformer.ckpt",
-        "16k_Vocal_Lightweight_MelBandRoformer"
-      ],
-      "model_type": "mel_band_roformer",
-      "architecture": "mel_band_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/vocal_extraction/16k_Vocal_Lightweight_MelBandRoformer.ckpt",
-      "config_relpath": "vocal/vocal_extraction/16k_Vocal_Lightweight_MelBandRoformer.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 59960415,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_extraction",
-      "secondary_category_cn": "人声提取",
-      "target_stem": "vocals",
-      "config_instruments": "vocals|instrumental",
-      "config_target_instrument": "vocals",
-      "classification_confidence": "high",
-      "classification_basis": "config 确认"
     },
     {
       "name": "big_beta5e.ckpt",
@@ -8312,56 +7612,6 @@
       "classification_basis": "config two stems"
     },
     {
-      "name": "BS_Inst_EXP_VRL.ckpt",
-      "aliases": [
-        "BS_Inst_EXP_VRL.ckpt",
-        "BS_Inst_EXP_VRL"
-      ],
-      "model_type": "bs_roformer",
-      "architecture": "bs_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/vocal_instrumental_dual/BS_Inst_EXP_VRL.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/BS_Inst_EXP_VRL.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 393351501,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "other",
-      "classification_confidence": "high",
-      "classification_basis": "config two stems"
-    },
-    {
-      "name": "bs_roformer_fno.ckpt",
-      "aliases": [
-        "bs_roformer_fno.ckpt",
-        "bs_roformer_fno"
-      ],
-      "model_type": "bs_roformer",
-      "architecture": "bs_roformer",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/vocal_instrumental_dual/bs_roformer_fno.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/bs_roformer_fno.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 332004435,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "other",
-      "classification_confidence": "high",
-      "classification_basis": "config two stems"
-    },
-    {
       "name": "bs_roformer_instrumental_resurrection_gabox.ckpt",
       "aliases": [
         "bs_roformer_instrumental_resurrection_gabox.ckpt",
@@ -8562,31 +7812,6 @@
       "classification_basis": "config two stems"
     },
     {
-      "name": "MDX23C-8KFFT-InstVoc_HQ_2.ckpt",
-      "aliases": [
-        "MDX23C-8KFFT-InstVoc_HQ_2.ckpt",
-        "MDX23C-8KFFT-InstVoc_HQ_2"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/vocal_instrumental_dual/MDX23C-8KFFT-InstVoc_HQ_2.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/MDX23C-8KFFT-InstVoc_HQ_2.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 448093770,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "InstVoc/Duality 名称"
-    },
-    {
       "name": "melband_roformer_inst_v1.ckpt",
       "aliases": [
         "melband_roformer_inst_v1.ckpt",
@@ -8716,31 +7941,6 @@
       "classification_basis": "config two stems"
     },
     {
-      "name": "model_mdx23c_ep_0_sdr_14.6632.ckpt",
-      "aliases": [
-        "model_mdx23c_ep_0_sdr_14.6632.ckpt",
-        "model_mdx23c_ep_0_sdr_14.6632"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/vocal_instrumental_dual/model_mdx23c_ep_0_sdr_14.6632.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/model_mdx23c_ep_0_sdr_14.6632.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 448103606,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config two stems"
-    },
-    {
       "name": "model_vocals_htdemucs_sdr_8.78.ckpt",
       "aliases": [
         "model_vocals_htdemucs_sdr_8.78.ckpt",
@@ -8754,31 +7954,6 @@
       "config_relpath": "vocal/vocal_instrumental_dual/model_vocals_htdemucs_sdr_8.78.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 168124336,
-      "sha256": "",
-      "primary_category": "vocal",
-      "primary_category_cn": "人声",
-      "secondary_category": "vocal_instrumental_dual",
-      "secondary_category_cn": "人声-伴奏双向分离",
-      "target_stem": "vocals/instrumental",
-      "config_instruments": "vocals|other",
-      "config_target_instrument": "",
-      "classification_confidence": "high",
-      "classification_basis": "config two stems"
-    },
-    {
-      "name": "model_vocals_mdx23c_sdr_10.17.ckpt",
-      "aliases": [
-        "model_vocals_mdx23c_sdr_10.17.ckpt",
-        "model_vocals_mdx23c_sdr_10.17"
-      ],
-      "model_type": "mdx23c",
-      "architecture": "mdx23c",
-      "supported": true,
-      "unsupported_reason": "",
-      "relpath": "vocal/vocal_instrumental_dual/model_vocals_mdx23c_sdr_10.17.ckpt",
-      "config_relpath": "vocal/vocal_instrumental_dual/model_vocals_mdx23c_sdr_10.17.yaml",
-      "auxiliary_relpaths": [],
-      "size_bytes": 448101203,
       "sha256": "",
       "primary_category": "vocal",
       "primary_category_cn": "人声",
