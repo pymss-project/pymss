@@ -1,5 +1,8 @@
-import numpy as np
+import json
+import subprocess
+
 import av
+import numpy as np
 
 
 def _frame_to_audio(frame, mono):
@@ -14,6 +17,83 @@ def _frame_to_audio(frame, mono):
     audio = frame.to_ndarray()
     audio = audio[None, :] if audio.ndim == 1 else audio
     return (audio.mean(axis=0, keepdims=True) if mono and audio.shape[0] > 1 else audio).astype(np.float32, copy=False)
+
+
+def _ffmpeg_audio_stream_info(path):
+    """Return basic audio stream information from ffprobe."""
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=sample_rate,channels",
+        "-of",
+        "json",
+        str(path),
+    ]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    streams = json.loads(result.stdout or "{}").get("streams") or []
+    if not streams:
+        raise ValueError(f"No audio stream found in {path!s}.")
+    stream = streams[0]
+    return int(stream["sample_rate"]), int(stream["channels"])
+
+
+def _load_audio_ffmpeg(path, sr=None, mono=False, offset=0.0, duration=None):
+    """Load audio through the ffmpeg CLI as a fallback for damaged streams."""
+    source_rate, source_channels = _ffmpeg_audio_stream_info(path)
+    out_rate = int(sr or source_rate)
+    channels = 1 if mono else source_channels
+    command = ["ffmpeg", "-nostdin", "-v", "error"]
+    if offset:
+        command += ["-ss", str(float(offset))]
+    command += ["-i", str(path), "-map", "0:a:0", "-vn"]
+    if duration is not None:
+        command += ["-t", str(float(duration))]
+    command += ["-f", "f32le", "-acodec", "pcm_f32le", "-ar", str(out_rate), "-ac", str(channels), "-"]
+    result = subprocess.run(command, check=True, capture_output=True)
+    audio = np.frombuffer(result.stdout, dtype="<f4")
+    complete_samples = audio.size // channels
+    audio = audio[: complete_samples * channels]
+    audio = audio.reshape(complete_samples, channels).T
+    audio = np.ascontiguousarray(audio.astype(np.float32, copy=False))
+    return (audio[0] if mono or channels == 1 else audio), out_rate
+
+
+def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None):
+    """Load audio through PyAV."""
+    chunks = []
+    out_rate = None
+    with av.open(path) as container:
+        stream = container.streams.audio[0]
+        out_rate = int(sr or stream.rate)
+        resampler = None
+        stop_samples = None if duration is None else int(round((offset + duration) * out_rate))
+        decoded = 0
+
+        for frame in container.decode(stream):
+            if resampler is None:
+                resampler = av.AudioResampler(format="fltp", layout=frame.layout.name, rate=out_rate)
+
+            for out in resampler.resample(frame):
+                chunks.append(audio := _frame_to_audio(out, mono))
+                decoded += audio.shape[-1]
+            if stop_samples is not None and decoded >= stop_samples:
+                break
+
+        if resampler is not None:
+            for out in resampler.resample(None):
+                chunks.append(_frame_to_audio(out, mono))
+
+    start = int(round(offset * out_rate))
+    stop = None if duration is None else start + int(round(duration * out_rate))
+    channels = 1 if mono else 0
+    audio = np.ascontiguousarray(
+        (np.concatenate(chunks, axis=-1) if chunks else np.empty((channels, 0), dtype=np.float32))[..., start:stop]
+    )
+    return (audio[0] if mono or audio.shape[0] == 1 else audio), out_rate
 
 
 def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
@@ -55,35 +135,10 @@ def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
         ... )
         >>> clip.ndim
         1"""
-    chunks = []
-    with av.open(path) as container:
-        stream = container.streams.audio[0]
-        out_rate = int(sr or stream.rate)
-        resampler = None
-        stop_samples = None if duration is None else int(round((offset + duration) * out_rate))
-        decoded = 0
-
-        for frame in container.decode(stream):
-            if resampler is None:
-                resampler = av.AudioResampler(format="fltp", layout=frame.layout.name, rate=out_rate)
-
-            for out in resampler.resample(frame):
-                chunks.append(audio := _frame_to_audio(out, mono))
-                decoded += audio.shape[-1]
-            if stop_samples is not None and decoded >= stop_samples:
-                break
-
-        if resampler is not None:
-            for out in resampler.resample(None):
-                chunks.append(_frame_to_audio(out, mono))
-
-    start = int(round(offset * out_rate))
-    stop = None if duration is None else start + int(round(duration * out_rate))
-    channels = 1 if mono else 0
-    audio = np.ascontiguousarray(
-        (np.concatenate(chunks, axis=-1) if chunks else np.empty((channels, 0), dtype=np.float32))[..., start:stop]
-    )
-    return (audio[0] if mono or audio.shape[0] == 1 else audio), out_rate
+    try:
+        return _load_audio_av(path, sr=sr, mono=mono, offset=offset, duration=duration)
+    except av.FFmpegError:
+        return _load_audio_ffmpeg(path, sr=sr, mono=mono, offset=offset, duration=duration)
 
 
 def _bitrate_to_int(value):
