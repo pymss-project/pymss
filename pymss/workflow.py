@@ -24,6 +24,8 @@ steps:
     model: bs_roformer_voc_hyperacev2
     input: input
     stems: [vocals, other]
+    inference_params:
+      overlap_size: 48000
     save:
       vocals: vocal
       other: other
@@ -32,6 +34,8 @@ steps:
     model: UVR-DeReverb-aufr33-jarredou_4band_v4_ms_fullband
     input: split.other
     stems: [Dry]
+    inference_params:
+      overlap_size: 22050
     save:
       Dry: dry
 
@@ -39,6 +43,8 @@ steps:
     model: your_harmony_model
     input: dereverb.Dry
     stems: [other]
+    inference_params:
+      overlap_size: 22050
     save:
       other: harmony_other
 """

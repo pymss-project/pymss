@@ -173,3 +173,52 @@ def test_workflow_run_accepts_explicit_model_files(tmp_path):
     assert received[0][1]["model_type"] == "mel_band_roformer"
     assert received[0][1]["model_path"] == "/models/restore.ckpt"
     assert received[0][1]["config_path"] == "/models/restore.yaml"
+
+
+def test_workflow_run_passes_step_specific_inference_params(tmp_path):
+    (tmp_path / "song.wav").write_bytes(b"fake")
+    workflow = load_workflow_data(
+        {
+            "version": 1,
+            "defaults": {
+                "inference_params": {
+                    "batch_size": 1,
+                    "overlap_size": 100,
+                },
+            },
+            "steps": [
+                {
+                    "id": "split",
+                    "model": "split-model",
+                    "input": "input",
+                    "stems": ["vocals"],
+                    "inference_params": {"overlap_size": 200},
+                },
+                {
+                    "id": "deverb",
+                    "model": "deverb-model",
+                    "input": "input",
+                    "stems": ["Dry"],
+                    "inference_params": {"overlap_size": 300},
+                },
+            ],
+        }
+    )
+    received = []
+
+    def separator_factory(model_name, **kwargs):
+        received.append((model_name, kwargs["inference_params"]))
+        return FakeSeparator(model_name, [])
+
+    runner = WorkflowRunner(
+        workflow,
+        separator_factory=separator_factory,
+        audio_loader=lambda *_args, **_kwargs: (np.zeros((2, 4), dtype=np.float32), 44100),
+        audio_saver=lambda *_args, **_kwargs: None,
+    )
+
+    assert runner.run(str(tmp_path / "song.wav"), tmp_path) == ["song.wav"]
+    assert received == [
+        ("split-model", {"batch_size": 1, "overlap_size": 200}),
+        ("deverb-model", {"batch_size": 1, "overlap_size": 300}),
+    ]

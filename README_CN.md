@@ -102,7 +102,7 @@ pymss workflow run -c vocal_chain.yaml \
   --download
 ```
 
-workflow 中的 `input: input` 表示原始音频，`input: split.other` 表示使用 `split` 步骤输出的 `other` 音轨。`save` 控制保存哪些音轨以及保存到输出目录下的哪个子目录。
+workflow 中的 `input: input` 表示原始音频，`input: split.other` 表示使用 `split` 步骤输出的 `other` 音轨。`save` 控制保存哪些音轨以及保存到输出目录下的哪个子目录。共享推理参数如 `batch_size` 可以放在 `defaults.inference_params`，每个模型单独的参数如各自的 `overlap_size` 可以放在该 step 的 `inference_params`。
 
 ### CLI Ensemble
 

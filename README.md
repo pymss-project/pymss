@@ -103,7 +103,7 @@ pymss workflow run -c vocal_chain.yaml \
   --download
 ```
 
-In a workflow, `input: input` means the original audio, and `input: split.other` means the `other` stem produced by the `split` step. `save` controls which stems are written and which output subdirectory they use.
+In a workflow, `input: input` means the original audio, and `input: split.other` means the `other` stem produced by the `split` step. `save` controls which stems are written and which output subdirectory they use. Put shared inference options such as `batch_size` under `defaults.inference_params`, and put model-specific options such as each step's `overlap_size` under that step's `inference_params`.
 
 ### CLI ensemble
 
