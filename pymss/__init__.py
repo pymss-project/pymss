@@ -17,6 +17,7 @@ Exports:
     download_model: Download all files required by one catalog model.
     ensemble_audios: Load and combine multiple audio files.
     save_ensemble_audio: Ensemble multiple audio files and save the result.
+    WorkflowRunner: Run a multi-model audio workflow.
     load_audio: Load an audio file into a NumPy array.
     save_audio: Save a NumPy audio array to wav/flac/mp3/m4a.
 
@@ -46,6 +47,7 @@ from .model_registry import create_separator, get_model_entry, list_models, reso
 from .model_download import download_model
 from .ensemble import ensemble_audios, save_ensemble_audio
 from .audio_io import load_audio, save_audio
+from .workflow import WorkflowRunner, load_workflow_file, run_workflow_file, validate_workflow
 
 __all__ = (
     "MSSeparator",
@@ -57,6 +59,10 @@ __all__ = (
     "download_model",
     "ensemble_audios",
     "save_ensemble_audio",
+    "WorkflowRunner",
+    "load_workflow_file",
+    "run_workflow_file",
+    "validate_workflow",
     "load_audio",
     "save_audio",
 )

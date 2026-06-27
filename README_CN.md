@@ -89,6 +89,21 @@ pymss --model-dir /path/to/models infer bs_roformer_voc_hyperacev2 \
 
 如果是在源码目录里未安装运行，可以用 `python -m pymss.cli` 代替 `pymss`。
 
+### CLI Workflow
+
+可以用 workflow 文件把多个模型串成自动流程：
+
+```sh
+pymss workflow init -o vocal_chain.yaml
+pymss workflow validate -c vocal_chain.yaml
+pymss workflow run -c vocal_chain.yaml \
+  -i path/to/input_file_or_folder \
+  -o results \
+  --download
+```
+
+workflow 中的 `input: input` 表示原始音频，`input: split.other` 表示使用 `split` 步骤输出的 `other` 音轨。`save` 控制保存哪些音轨以及保存到输出目录下的哪个子目录。
+
 ### CLI Ensemble
 
 ```sh

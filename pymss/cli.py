@@ -6,6 +6,7 @@ from .ensemble import ENSEMBLE_ALGORITHMS, save_ensemble_audio
 from .logger import get_separation_logger
 from .model_download import download_all, download_model
 from .model_registry import create_separator, list_models, resolve_model
+from .workflow import load_workflow_file, run_workflow_file, validate_workflow, write_workflow_template
 
 
 def _parse_key_value(values):
@@ -210,6 +211,55 @@ def cmd_ensemble(args):
     return 0
 
 
+def cmd_workflow_init(args):
+    """Write a starter workflow file."""
+    path = write_workflow_template(args.output, overwrite=args.force)
+    print(f"Wrote workflow template to {path}")
+    return 0
+
+
+def cmd_workflow_validate(args):
+    """Validate a workflow file without running inference."""
+    workflow = load_workflow_file(args.config)
+    model_resolver = resolve_model if args.check_models or args.require_files else None
+    validate_workflow(
+        workflow,
+        model_dir=args.model_dir,
+        require_model_files=args.require_files,
+        model_resolver=model_resolver,
+    )
+    print(f"Workflow is valid: {len(workflow.steps)} step(s).")
+    return 0
+
+
+def cmd_workflow_run(args):
+    """Run an audio workflow from a YAML/JSON file."""
+    logger = get_separation_logger()
+    files = run_workflow_file(
+        args.config,
+        args.input,
+        args.output,
+        model_dir=args.model_dir,
+        device=args.device,
+        output_format=args.output_format,
+        download=args.download,
+        source=args.source,
+        endpoint=args.endpoint,
+        audio_params={
+            "wav_bit_depth": args.wav_bit_depth,
+            "flac_bit_depth": args.flac_bit_depth,
+            "mp3_bit_rate": args.mp3_bit_rate,
+            "m4a_bit_rate": args.m4a_bit_rate,
+            "m4a_codec": args.m4a_codec,
+            "m4a_aac_at_quality": args.m4a_aac_at_quality,
+        },
+        logger=logger,
+        debug=args.debug,
+    )
+    logger.info(f"Processed {len(files)} file(s).")
+    return 0
+
+
 def cmd_serve(args):
     """Implement the cmd serve helper.
 
@@ -376,6 +426,77 @@ def build_parser():
     ensemble_parser.add_argument("--m4a-codec", default="aac")
     ensemble_parser.add_argument("--m4a-aac-at-quality", default=2, type=int)
     ensemble_parser.set_defaults(func=cmd_ensemble)
+
+    # ==========================
+    # Workflow
+    # ==========================
+    workflow_parser = subparsers.add_parser(
+        "workflow",
+        help="Create, validate, or run an automatic multi-model workflow.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    workflow_subparsers = workflow_parser.add_subparsers(dest="workflow_command", required=True)
+
+    workflow_init_parser = workflow_subparsers.add_parser(
+        "init",
+        help="Write a starter workflow YAML file.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    workflow_init_parser.add_argument("-o", "--output", default="workflow.yaml", help="Workflow file to create.")
+    workflow_init_parser.add_argument("--force", action="store_true", help="Overwrite the output file if it exists.")
+    workflow_init_parser.set_defaults(func=cmd_workflow_init)
+
+    workflow_validate_parser = workflow_subparsers.add_parser(
+        "validate",
+        help="Validate a workflow YAML/JSON file.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    workflow_validate_parser.add_argument("-c", "--config", required=True, help="Workflow YAML/JSON file.")
+    workflow_validate_parser.add_argument(
+        "--model-dir",
+        help="Local model cache directory used when --require-files is set.",
+    )
+    workflow_validate_parser.add_argument(
+        "--check-models",
+        action="store_true",
+        help="Also check that every referenced model exists in the catalog.",
+    )
+    workflow_validate_parser.add_argument(
+        "--require-files",
+        action="store_true",
+        help="Also require every referenced catalog model file to exist locally.",
+    )
+    workflow_validate_parser.set_defaults(func=cmd_workflow_validate)
+
+    workflow_run_parser = workflow_subparsers.add_parser(
+        "run",
+        help="Run inference through a workflow YAML/JSON file.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    workflow_run_parser.add_argument("-c", "--config", required=True, help="Workflow YAML/JSON file.")
+    workflow_run_parser.add_argument("-i", "--input", required=True, help="Input audio file or folder.")
+    workflow_run_parser.add_argument("-o", "--output", default="results", help="Output folder.")
+    workflow_run_parser.add_argument(
+        "--model-dir",
+        help="Local model cache directory. Workflow step model_dir values take precedence.",
+    )
+    workflow_run_parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download missing model files before each workflow step is loaded.",
+    )
+    workflow_run_parser.add_argument("--source", default="modelscope", choices=["modelscope", "huggingface", "hf-mirror"])
+    workflow_run_parser.add_argument("--endpoint", help="Custom resolve endpoint. It must serve files by relative path.")
+    workflow_run_parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps", "mlx"])
+    workflow_run_parser.add_argument("--format", choices=["wav", "flac", "mp3", "m4a"], dest="output_format")
+    workflow_run_parser.add_argument("--wav-bit-depth", default="FLOAT", choices=["FLOAT", "PCM_16", "PCM_24"])
+    workflow_run_parser.add_argument("--flac-bit-depth", default="PCM_16", choices=["PCM_16", "PCM_24"])
+    workflow_run_parser.add_argument("--mp3-bit-rate", default="320k")
+    workflow_run_parser.add_argument("--m4a-bit-rate", default="512k")
+    workflow_run_parser.add_argument("--m4a-codec", default="aac")
+    workflow_run_parser.add_argument("--m4a-aac-at-quality", default=2, type=int)
+    workflow_run_parser.add_argument("--debug", action="store_true")
+    workflow_run_parser.set_defaults(func=cmd_workflow_run)
 
     # ==========================
     # Server

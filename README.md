@@ -90,6 +90,21 @@ pymss --model-dir /path/to/models infer bs_roformer_voc_hyperacev2 \
 
 When running from a source checkout without installation, use `python -m pymss.cli` instead of `pymss`.
 
+### CLI workflow
+
+Use a workflow file to chain multiple models automatically:
+
+```sh
+pymss workflow init -o vocal_chain.yaml
+pymss workflow validate -c vocal_chain.yaml
+pymss workflow run -c vocal_chain.yaml \
+  -i path/to/input_file_or_folder \
+  -o results \
+  --download
+```
+
+In a workflow, `input: input` means the original audio, and `input: split.other` means the `other` stem produced by the `split` step. `save` controls which stems are written and which output subdirectory they use.
+
 ### CLI ensemble
 
 ```sh
