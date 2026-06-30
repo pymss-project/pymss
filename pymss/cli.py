@@ -2,6 +2,8 @@ import argparse
 import json
 import sys
 
+from tqdm.auto import tqdm
+
 from .ensemble import ENSEMBLE_ALGORITHMS, save_ensemble_audio
 from .logger import get_separation_logger
 from .model_download import download_all, download_model
@@ -34,6 +36,29 @@ def _parse_key_value(values):
                 except ValueError:
                     result[key] = raw
     return result
+
+
+class _CliInferenceProgress:
+    def __init__(self):
+        self._bar = None
+        self._message = None
+        self._total = None
+
+    def __call__(self, done, total, message):
+        total = max(1, int(total or 1))
+        done = max(0, min(int(done), total))
+        if self._bar is None or self._message != message or self._total != total or done < self._bar.n:
+            self.close()
+            self._message = message
+            self._total = total
+            self._bar = tqdm(total=total, desc=message, leave=False, mininterval=0, miniters=1)
+        if done != self._bar.n:
+            self._bar.update(done - self._bar.n)
+
+    def close(self):
+        if self._bar is not None:
+            self._bar.close()
+            self._bar = None
 
 
 def cmd_list(args):
@@ -158,6 +183,7 @@ def cmd_infer(args):
         Any: Computed result."""
     _ensure_model_files(args)
     logger = get_separation_logger()
+    inference_progress = _CliInferenceProgress()
     with create_separator(
         args.model,
         model_dir=args.model_dir,
@@ -175,9 +201,13 @@ def cmd_infer(args):
         store_dirs=args.output,
         logger=logger,
         debug=args.debug,
+        progress_callback=inference_progress,
         inference_params=_parse_key_value(args.param),
     ) as separator:
-        files = separator.process_folder(args.input)
+        try:
+            files = separator.process_folder(args.input)
+        finally:
+            inference_progress.close()
     logger.info(f"Processed {len(files)} file(s).")
     return 0
 

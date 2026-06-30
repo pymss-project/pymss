@@ -314,17 +314,19 @@ class VRSeparator(CommonSeparator):
 
                 mask_batches = []
                 for i in process_batches:
-                    pred = self._predict_mask_mlx(torch.from_numpy(x_dataset[i : i + self.batch_size]))
+                    batch_count = min(self.batch_size, patches - i)
+                    pred = self._predict_mask_mlx(torch.from_numpy(x_dataset[i : i + batch_count]))
                     pred = pred.astype(mx.float32).transpose(1, 2, 0, 3).reshape(pred.shape[1], pred.shape[2], -1)
                     mask_batches.append(pred)
                     write_pos += pred.shape[2]
                     if self.progress_callback:
-                        self.progress_callback(min(i + self.batch_size, patches), patches, "Processing VR batches")
+                        self.progress_callback(i + batch_count, patches, "Processing VR batches")
                 return mx.concatenate(mask_batches, axis=2)[:, :, :write_pos]
 
             with torch.inference_mode():
                 for i in process_batches:
-                    x_batch_cpu = torch.from_numpy(x_dataset[i : i + self.batch_size])
+                    batch_count = min(self.batch_size, patches - i)
+                    x_batch_cpu = torch.from_numpy(x_dataset[i : i + batch_count])
                     x_batch = (
                         x_batch_cpu.to(device=device, non_blocking=True, memory_format=torch.channels_last)
                         if self.use_channels_last
@@ -346,7 +348,7 @@ class VRSeparator(CommonSeparator):
                     mask[:, :, write_pos : write_pos + pred.size(2)] = pred
                     write_pos += pred.size(2)
                     if self.progress_callback:
-                        self.progress_callback(min(i + self.batch_size, patches), patches, "Processing VR batches")
+                        self.progress_callback(i + batch_count, patches, "Processing VR batches")
             return mask[:, :, :write_pos]
 
         def adjust_aggr_torch(mask, is_non_accom_stem):
