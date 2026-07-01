@@ -62,6 +62,22 @@ def _load_audio_ffmpeg(path, sr=None, mono=False, offset=0.0, duration=None):
     return (audio[0] if mono or channels == 1 else audio), out_rate
 
 
+def _load_audio_librosa(path, sr=None, mono=False, offset=0.0, duration=None):
+    """Load audio through librosa as a fallback before the ffmpeg CLI."""
+    import librosa
+
+    audio, out_rate = librosa.load(
+        path,
+        sr=sr,
+        mono=mono,
+        offset=float(offset or 0.0),
+        duration=None if duration is None else float(duration),
+        dtype=np.float32,
+    )
+    audio = np.ascontiguousarray(np.asarray(audio, dtype=np.float32))
+    return (audio[0] if audio.ndim > 1 and (mono or audio.shape[0] == 1) else audio), int(out_rate)
+
+
 def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None):
     """Load audio through PyAV."""
     chunks = []
@@ -99,9 +115,10 @@ def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None):
 def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
     """Load an audio file as float32 NumPy samples.
 
-    PyAV is used for decoding and optional resampling. Stereo or multi-channel
-    output is returned channel-first as ``(channels, samples)``. Mono output is
-    returned as a one-dimensional array.
+    Audio decoding is attempted in this order: PyAV, librosa, then the
+    ffmpeg CLI fallback. Stereo or multi-channel output is returned
+    channel-first as ``(channels, samples)``. Mono output is returned as a
+    one-dimensional array.
 
     Args:
         path (str | os.PathLike): Input audio file path. Any format supported
@@ -135,10 +152,21 @@ def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
         ... )
         >>> clip.ndim
         1"""
-    try:
-        return _load_audio_av(path, sr=sr, mono=mono, offset=offset, duration=duration)
-    except av.FFmpegError:
-        return _load_audio_ffmpeg(path, sr=sr, mono=mono, offset=offset, duration=duration)
+    loaders = [
+        ("PyAV", _load_audio_av),
+        ("librosa", _load_audio_librosa),
+        ("ffmpeg CLI", _load_audio_ffmpeg),
+    ]
+
+    errors = []
+    for name, loader in loaders:
+        try:
+            return loader(path, sr=sr, mono=mono, offset=offset, duration=duration)
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+            continue
+
+    raise RuntimeError(f"All audio loading methods failed: {'; '.join(errors)}")
 
 
 def _bitrate_to_int(value):
