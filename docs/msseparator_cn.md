@@ -86,7 +86,7 @@ separator = MSSeparator(
 | `audio_params` | `dict` | 见下文 | 保存音频文件时使用的编码参数。 |
 | `logger` | `logging.Logger \| None` | `None` | Logger 实例。不传时使用 `pymss.get_separation_logger()`。 |
 | `debug` | `bool` | `False` | 是否启用 debug 日志，并关闭部分面向普通 CLI 输出的进度条行为。 |
-| `progress_callback` | callable \| `None` | `None` | 可选进度回调，会传给底层 demix/VR 逻辑，用于获取长时间推理过程中的进度。 |
+| `progress_callback` | callable \| `None` | `None` | 可选进度回调，会传给底层 demix/VR 逻辑。demix 进度会以 `callback(done_seconds, total_seconds, message)` 的形式返回。 |
 | `inference_params` | `dict` | 见下文 | 推理时的运行参数覆盖。支持的 key 取决于模型。 |
 
 ## 使用 `store_dirs` 控制输出

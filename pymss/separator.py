@@ -655,7 +655,9 @@ class MSSeparator:
             progress-bar behavior. Defaults to False.
         progress_callback (callable | None, optional): Optional callback used
             by lower-level demixing code. It receives progress information
-            during long-running inference. Defaults to None.
+            during long-running inference. Demix progress is reported as
+            ``callback(done_seconds, total_seconds, message)``. Defaults to
+            None.
         inference_params (dict, optional): Runtime inference overrides. Common
             keys include ``batch_size``, ``overlap_size``, ``chunk_size``,
             ``stem_batch_size``, ``standardize``, ``normalize``, ``mask_mode``,
@@ -753,7 +755,9 @@ class MSSeparator:
             debug (bool, optional): Enables verbose debug logging. Defaults to
                 False.
             progress_callback (callable | None, optional): Progress callback
-                passed into demixing helpers. Defaults to None.
+                passed into demixing helpers. Demix progress is reported as
+                ``callback(done_seconds, total_seconds, message)``. Defaults
+                to None.
             inference_params (dict, optional): Inference overrides. ``None``
                 values keep model config defaults. ``standardize`` controls
                 legacy input standardization, and ``normalize`` controls linked
@@ -1076,7 +1080,7 @@ class MSSeparator:
             None: Model settings are written to the logger."""
         config_path_part = f", config_path: {config_path}" if include_config_path else ""
         self.logger.info(
-            f"Separator params: model_type: {model_type}, model_path: {self.model_path}{config_path_part}, output_folder: {self.store_dirs}"
+            f"Separator params: model_type: {model_type}, model_path: {self.model_path}{config_path_part}, output_folder: {self.store_dirs}, save_as_folder: {self.save_as_folder}"
         )
         self.logger.info(f"Audio params: output_format: {self.output_format}, audio_params: {self.audio_params}")
         self.logger.info(

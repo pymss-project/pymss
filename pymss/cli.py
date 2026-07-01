@@ -1,14 +1,16 @@
 import argparse
 import json
 import sys
-
-from tqdm.auto import tqdm
+import warnings
 
 from .ensemble import ENSEMBLE_ALGORITHMS, save_ensemble_audio
 from .logger import get_separation_logger
 from .model_download import download_all, download_model
 from .model_registry import create_separator, list_models, resolve_model
+from .progress import _CliInferenceProgress
 from .workflow import load_workflow_file, run_workflow_file, validate_workflow, write_workflow_template
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def _parse_key_value(values):
@@ -36,29 +38,6 @@ def _parse_key_value(values):
                 except ValueError:
                     result[key] = raw
     return result
-
-
-class _CliInferenceProgress:
-    def __init__(self):
-        self._bar = None
-        self._message = None
-        self._total = None
-
-    def __call__(self, done, total, message):
-        total = max(1, int(total or 1))
-        done = max(0, min(int(done), total))
-        if self._bar is None or self._message != message or self._total != total or done < self._bar.n:
-            self.close()
-            self._message = message
-            self._total = total
-            self._bar = tqdm(total=total, desc=message, leave=False, mininterval=0, miniters=1)
-        if done != self._bar.n:
-            self._bar.update(done - self._bar.n)
-
-    def close(self):
-        if self._bar is not None:
-            self._bar.close()
-            self._bar = None
 
 
 def cmd_list(args):

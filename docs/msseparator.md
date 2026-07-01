@@ -86,7 +86,7 @@ separator = MSSeparator(
 | `audio_params` | `dict` | see below | Encoding options used when saving audio. |
 | `logger` | `logging.Logger \| None` | `None` | Logger instance. If omitted, pymss uses `pymss.get_separation_logger()`. |
 | `debug` | `bool` | `False` | Enables debug logging and disables some progress bar behavior intended for normal CLI-style output. |
-| `progress_callback` | callable \| `None` | `None` | Optional callback used by lower-level demixing code. It receives progress information from long-running inference loops. |
+| `progress_callback` | callable \| `None` | `None` | Optional callback used by lower-level demixing code. Demix progress is reported as `callback(done_seconds, total_seconds, message)`. |
 | `inference_params` | `dict` | see below | Runtime inference overrides. Keys are model-dependent. Unsupported keys are rejected by the server validation layer and ignored only when not passed to the relevant runtime path. |
 
 ## Output Routing With `store_dirs`

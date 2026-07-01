@@ -3,13 +3,13 @@ from contextlib import contextmanager, nullcontext
 import numpy as np
 import torch
 import torch.nn as nn
-from tqdm.auto import tqdm
 from numpy.typing import NDArray
 from typing import Dict
 
 from pymss_core import get_model_from_config as _core_get_model_from_config
 
 from .config import load_config
+from .progress import _ProgressContext
 
 
 def _model_target(model):
@@ -64,90 +64,6 @@ def _model_progress_fraction_context(model, callback):
                     delattr(target, "_pymss_progress_fraction_callback")
             else:
                 target._pymss_progress_fraction_callback = previous
-
-
-class _ProgressContext:
-    """Small progress adapter used by demixing helpers.
-
-    Args:
-        pbar (Any, optional): Pbar value. Defaults to False.
-        total (Any, optional): Total value. Defaults to 1.
-        callback (Any, optional): Callback value. Defaults to None.
-        done (Any, optional): Done value. Defaults to 0.
-        message (str, optional): Message value. Defaults to 'Processing audio chunks'.
-    """
-
-    def __init__(self, pbar=False, total=1, callback=None, done=0, message="Processing audio chunks"):
-        """Initialize the instance.
-
-        Args:
-            pbar (Any, optional): Pbar value. Defaults to False.
-            total (Any, optional): Total value. Defaults to 1.
-            callback (Any, optional): Callback value. Defaults to None.
-            done (Any, optional): Done value. Defaults to 0.
-            message (str, optional): Message value. Defaults to 'Processing audio chunks'.
-
-        Returns:
-            None: This method completes for its side effects."""
-        self.enabled = bool(pbar or callback)
-        self.bar = None
-        self.callback = callback
-        self.done = done
-        self.total = total
-        self.message = message
-        if not self.enabled:
-            return
-        self.bar = tqdm(total=total, desc=message, leave=False) if pbar else None
-        self.total = int(self.total or 1)
-        self.done = min(max(0, int(self.done or 0)), self.total)
-        if self.bar is not None and self.done:
-            self.bar.update(min(self.done, self.total))
-        self.emit()
-
-    def emit(self, done=None):
-        """Emit value.
-
-        Args:
-            done (Any, optional): Done value. Defaults to None.
-
-        Returns:
-            None: This callable completes for its side effects."""
-        if not self.enabled:
-            return
-        if done is not None:
-            next_done = min(max(0, int(done)), self.total)
-            if self.bar is not None:
-                self.bar.update(next_done - self.done)
-            self.done = next_done
-        if self.callback is None:
-            return
-        self.callback(self.done, self.total, self.message)
-
-    def update(self, amount):
-        """Update value.
-
-        Args:
-            amount (Any): Amount value.
-
-        Returns:
-            None: This callable completes for its side effects."""
-        if not self.enabled:
-            return
-        amount = int(amount)
-        self.emit(self.done + amount)
-
-    def close(self):
-        """Close value.
-
-        Args:
-            None: This callable does not accept user-provided arguments.
-
-        Returns:
-            None: This method completes for its side effects."""
-        if not self.enabled:
-            return
-        if self.bar:
-            self.bar.close()
 
 
 def get_model_from_config(model_type, config_path, model_kwargs_override=None):
@@ -986,6 +902,7 @@ def demix_track_mlx_full(config, model, mix, device, pbar=False, source_indices=
     import mlx.core as mx
 
     C = config.audio.chunk_size
+    sample_rate = int(config.audio.get("sample_rate", 44100))
     source_indices = _normalize_source_indices(config, source_indices)
     step = _get_inference_step(config, C)
     border = C - step
@@ -996,7 +913,7 @@ def demix_track_mlx_full(config, model, mix, device, pbar=False, source_indices=
     starts, windows = _mlx_build_chunk_plan(mix.shape[1], C, step, fade_size)
     result = mx.zeros((_source_count(config, source_indices), mix.shape[0], mix.shape[1]), dtype=mx.float32)
     counter = mx.zeros((1, 1, mix.shape[1]), dtype=mx.float32)
-    progress = _ProgressContext(pbar, mix.shape[1], progress_callback)
+    progress = _ProgressContext(pbar, mix.shape[1], progress_callback, sample_rate=sample_rate)
 
     for batch_start in range(0, len(starts), batch_size):
         batch_indices = range(batch_start, min(batch_start + batch_size, len(starts)))
@@ -1045,6 +962,7 @@ def demix_track(config, model, mix, device, pbar=False, source_indices=None, pro
     Returns:
         Any: Computed result."""
     C = config.audio.chunk_size
+    sample_rate = int(config.audio.get("sample_rate", 44100))
     source_indices = _normalize_source_indices(config, source_indices)
     step = _get_inference_step(config, C)
     border = C - step
@@ -1060,7 +978,7 @@ def demix_track(config, model, mix, device, pbar=False, source_indices=None, pro
     with _autocast(device, config.training.get("use_amp", True)):
         with torch.inference_mode():
             result, counter = _init_overlap_buffers(config, mix, device, use_complete_fast_path, source_indices)
-            progress = _ProgressContext(pbar, mix.shape[1], progress_callback)
+            progress = _ProgressContext(pbar, mix.shape[1], progress_callback, sample_rate=sample_rate)
 
             with _model_source_context(model, source_indices):
                 complete_chunks = 0
@@ -1129,7 +1047,8 @@ def demix_track_demucs(config, model, mix, device, pbar=False, source_indices=No
     source_indices = _normalize_source_indices(config, source_indices)
     source_names = _source_names(config)
     S = len(source_names)
-    C = config.training.samplerate * config.training.segment
+    sample_rate = int(config.training.samplerate)
+    C = sample_rate * config.training.segment
     batch_size = config.inference.batch_size
     step = _get_inference_step(config, C)
 
@@ -1141,7 +1060,7 @@ def demix_track_demucs(config, model, mix, device, pbar=False, source_indices=No
             i = 0
             batch_data = []
             batch_locations = []
-            progress = _ProgressContext(pbar, mix.shape[1], progress_callback)
+            progress = _ProgressContext(pbar, mix.shape[1], progress_callback, sample_rate=sample_rate)
 
             while i < mix.shape[1]:
                 part = mix[:, i : i + C].to(device)
@@ -1160,8 +1079,6 @@ def demix_track_demucs(config, model, mix, device, pbar=False, source_indices=No
                         counter[..., start : start + l] += 1.0
                     batch_data, batch_locations = [], []
 
-                if progress.bar:
-                    progress.bar.update(step)
                 progress.emit(min(i, mix.shape[1]))
 
             progress.close()
@@ -1200,7 +1117,13 @@ def demix(
     if model_type in {"demucs", "tasnet", "legacy_demucs", "legacy_tasnet"}:
         from .modules.legacy_demucs import apply_legacy_model
 
-        progress = _ProgressContext(callback=progress_callback)
+        sample_rate = int(config.training.samplerate)
+        progress = _ProgressContext(
+            callback=progress_callback,
+            total=mix.shape[1],
+            sample_rate=sample_rate,
+            message="Processing audio",
+        )
         progress.emit(0)
         with _autocast(device, config.training.get("use_amp", True)):
             with torch.inference_mode():
@@ -1216,7 +1139,7 @@ def demix(
                     .cpu()
                     .numpy()
                 )
-        progress.emit(1)
+        progress.emit(mix.shape[1])
         return dict(zip(config.training.instruments, estimates))
     if model_type == "htdemucs":
         return demix_track_demucs(
