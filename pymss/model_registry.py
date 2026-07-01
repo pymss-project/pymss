@@ -351,8 +351,8 @@ def create_separator(model_name, model_dir=None, **separator_kwargs):
             directory. Defaults to None.
         **separator_kwargs: Keyword arguments forwarded to ``MSSeparator``,
             such as ``device``, ``device_ids``, ``output_format``,
-            ``store_dirs``, ``audio_params``, ``logger``, ``debug``,
-            ``progress_callback``, and ``inference_params``.
+            ``store_dirs``, ``save_as_folder``, ``audio_params``, ``logger``,
+            ``debug``, ``progress_callback``, and ``inference_params``.
 
     Returns:
         MSSeparator: Loaded separator instance ready for inference.

@@ -199,6 +199,7 @@ def cmd_infer(args):
         },
         use_tta=args.tta,
         store_dirs=args.output,
+        save_as_folder=args.save_as_folder,
         logger=logger,
         debug=args.debug,
         progress_callback=inference_progress,
@@ -406,6 +407,11 @@ def build_parser():
     infer_parser.add_argument("--endpoint", help="Custom resolve endpoint. It must serve files by relative path.")
     infer_parser.add_argument("-i", "--input", required=True, help="Input audio file or folder.")
     infer_parser.add_argument("-o", "--output", default="results", help="Output folder.")
+    infer_parser.add_argument(
+        "--save-as-folder",
+        action="store_true",
+        help="Save each input audio file's separated stems in a subfolder named after the audio file.",
+    )
     infer_parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps", "mlx"])
     infer_parser.add_argument(
         "--device-id", action="append", type=int, dest="device_ids", help="CUDA device id. Can be repeated."

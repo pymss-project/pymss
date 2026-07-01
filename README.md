@@ -73,11 +73,13 @@ Run inference by catalog model name. If the model, config, or auxiliary files ar
 pymss infer bs_roformer_voc_hyperacev2 \
   -i path/to/input_file_or_folder \
   -o results \
+  --save-as-folder \
   --device auto \
   --format wav
 ```
 
 `--device auto` uses CUDA first when an NVIDIA GPU is available. On Apple Silicon it uses the MLX backend by default. Use `--device mlx` to force MLX, or `--device mps` to force PyTorch MPS.
+`--save-as-folder` writes each input audio file's stems under a subfolder named after that audio file, for example `results/song/song_vocals.wav`.
 
 The default download source is ModelScope. You can choose another source or model directory:
 
@@ -181,6 +183,7 @@ separator = MSSeparator(
         "vocals": "./output/vocals",
         "other": None # None or missing this stem will result in no output file for this stem. This example will output the vocal's stem in ./output/vocals and ignoring the other(instrumental) stem. Making sure the key(s) match the config file.
     },
+    save_as_folder=False,
     audio_params={"wav_bit_depth": "FLOAT", "flac_bit_depth": "PCM_24", "mp3_bit_rate": "320k", "m4a_bit_rate": "192k", "m4a_aac_at_quality": 2}, # Can be omitted
     logger=get_separation_logger(), # Can be omitted
     debug=False, # Can be omitted
@@ -218,6 +221,7 @@ For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator
 - output_format: The output audio format, default is 'wav'. Must be one of ['wav', 'flac', 'mp3', 'm4a']
 - use_tta: Whether to use TTA, default is False. Using TTA will triple the processing time with a little bit improvement in quality.
 - store_dirs: Storage directories, can be a single folder path or a dictionary with instrument keys.
+- save_as_folder: When True and store_dirs points to one output folder, save each input audio file's stems in a subfolder named after the audio file.
 - audio_params: Audio parameters including wav_bit_depth, flac_bit_depth, mp3_bit_rate, m4a_bit_rate, and m4a_aac_at_quality. Default is {"wav_bit_depth": "FLOAT", "flac_bit_depth": "PCM_24", "mp3_bit_rate": "320k", "m4a_bit_rate": "192k", "m4a_aac_at_quality": 2}.
 - logger: Logger instance. Default is pymss.get_separation_logger()
 - debug: Whether to enable debug mode, default is False.

@@ -568,6 +568,43 @@ def _get_store_dir(store_dirs, instr):
     return ""
 
 
+def _as_store_path(value):
+    """Return a filesystem path value as a string, or None for unsupported values."""
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _iter_store_paths(value):
+    """Yield filesystem paths from one ``store_dirs`` value."""
+    if isinstance(value, list):
+        for item in value:
+            path = _as_store_path(item)
+            if path:
+                yield path
+        return
+
+    path = _as_store_path(value)
+    if path:
+        yield path
+
+
+def _has_single_store_folder(store_dirs):
+    """Return whether ``store_dirs`` routes saved stems to one folder."""
+    if _as_store_path(store_dirs):
+        return True
+    if not isinstance(store_dirs, dict):
+        return False
+
+    folders = set()
+    for value in store_dirs.values():
+        paths = list(_iter_store_paths(value))
+        if not paths:
+            return False
+        folders.update(os.path.normcase(os.path.abspath(path)) for path in paths)
+    return len(folders) == 1
+
+
 class MSSeparator:
     """Load a music source separation model and run inference.
 
@@ -605,6 +642,9 @@ class MSSeparator:
             string writes every saved stem to the same folder. A dict maps stem
             names to a folder, a list of folders, ``None``, or an empty value.
             Missing/empty values skip that stem. Defaults to ``"results"``.
+        save_as_folder (bool, optional): When True and ``store_dirs`` resolves
+            to one output folder, each input audio file is saved into its own
+            subfolder named after the input audio basename. Defaults to False.
         audio_params (dict, optional): Encoding options used only when writing
             files, for example ``wav_bit_depth``, ``flac_bit_depth``,
             ``mp3_bit_rate``, ``m4a_bit_rate``, ``m4a_codec``, and
@@ -656,6 +696,7 @@ class MSSeparator:
         output_format="wav",
         use_tta=False,
         store_dirs="results",  # str for single folder, dict with instrument keys for multiple folders
+        save_as_folder=False,
         audio_params={
             "wav_bit_depth": "FLOAT",
             "flac_bit_depth": "PCM_24",
@@ -698,6 +739,10 @@ class MSSeparator:
                 For example ``"results"`` saves all stems to one folder, while
                 ``{"vocals": "out/vocals", "drums": None}`` saves only
                 vocals and skips drums. Defaults to ``"results"``.
+            save_as_folder (bool, optional): If True and ``store_dirs`` is a
+                single folder path, or every saved dict destination resolves to
+                the same folder, ``process_folder()`` writes each input file's
+                stems under ``<output>/<audio_name>/``. Defaults to False.
             audio_params (dict, optional): Encoder settings. Examples:
                 ``{"wav_bit_depth": "FLOAT"}``,
                 ``{"flac_bit_depth": "PCM_24"}``,
@@ -740,6 +785,7 @@ class MSSeparator:
         self.output_format = output_format
         self.use_tta = use_tta
         self.store_dirs = store_dirs
+        self.save_as_folder = save_as_folder
         self.audio_params = audio_params
         self.logger = logger
         self.debug = debug
@@ -774,6 +820,8 @@ class MSSeparator:
                 self.store_dirs.pop(key)
                 self.logger.warning(f"Invalid instrument key: {key}, removing from store_dirs")
                 self.logger.warning(f"Valid instrument keys: {self.config.training.instruments}")
+
+        self.save_as_folder = bool(self.save_as_folder and _has_single_store_folder(self.store_dirs))
 
     def __enter__(self):
         """Return the loaded separator when entering a ``with`` block.
@@ -834,7 +882,8 @@ class MSSeparator:
                 endpoint. Defaults to None.
             **kwargs: Extra arguments forwarded to ``MSSeparator(...)``, such
                 as ``device``, ``output_format``, ``store_dirs``,
-                ``audio_params``, ``debug``, and ``inference_params``.
+                ``save_as_folder``, ``audio_params``, ``debug``, and
+                ``inference_params``.
 
         Returns:
             MSSeparator: Loaded separator instance.
@@ -1139,7 +1188,8 @@ class MSSeparator:
             audio (np.ndarray): Stem audio samples.
             sr (int): Sample rate.
             file_name (str): Base input filename without extension.
-            save_dir (str | os.PathLike): Destination directory.
+            save_dir (str): Destination directory. When ``save_as_folder`` is
+                active, this is already the per-input audio subfolder.
 
         Returns:
             None: The stem is written to disk."""
@@ -1147,6 +1197,18 @@ class MSSeparator:
         os.makedirs(save_dir, exist_ok=True)
         self.save_audio(audio, sr, f"{file_name}_{instr}", save_dir)
         self.logger.debug(f"Saved {instr} for {file_name}_{instr}.{output_format} in {save_dir}")
+
+    def _resolve_output_dir(self, save_dir, file_name):
+        """Return the final folder used for one input audio file.
+
+        Args:
+            save_dir (str): Configured output directory.
+            file_name (str): Base input filename without extension.
+
+        Returns:
+            str: Configured directory, or a per-audio subfolder when
+            ``save_as_folder`` is active."""
+        return os.path.join(save_dir, file_name) if self.save_as_folder else save_dir
 
     def _wait_save_futures(self, path, futures):
         """Wait for asynchronous save jobs and report failures.
@@ -1189,7 +1251,9 @@ class MSSeparator:
             save_executor (ThreadPoolExecutor): Executor used for file writes.
             results (dict[str, np.ndarray]): Mapping of stem name to audio.
             sr (int): Sample rate.
-            file_name (str): Base input filename without extension.
+            file_name (str): Base input filename without extension. Also used
+                as the per-input output folder name when ``save_as_folder`` is
+                active.
 
         Returns:
             list[concurrent.futures.Future]: Save job futures."""
@@ -1198,7 +1262,8 @@ class MSSeparator:
             for instr, audio in results.items()
             for save_dir in [_get_store_dir(self.store_dirs, instr)]
             if save_dir
-            for output_dir in (save_dir if isinstance(save_dir, list) else [save_dir])
+            for configured_output_dir in (save_dir if isinstance(save_dir, list) else [save_dir])
+            for output_dir in [self._resolve_output_dir(configured_output_dir, file_name)]
         ]
 
     def _stems_to_save(self):
@@ -1301,6 +1366,8 @@ class MSSeparator:
         Notes:
             ``store_dirs`` controls which stems are saved. If only ``vocals``
             and ``drums`` are routed, only those stems are requested and saved.
+            When ``save_as_folder=True`` and all saved stems share one output
+            folder, stems for ``song.wav`` are written under ``<output>/song/``.
             With output ``normalize=True``, those selected stems share one peak
             normalization gain."""
         if os.path.isfile(input_folder):

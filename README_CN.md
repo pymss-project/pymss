@@ -72,11 +72,13 @@ uv run pytest test -q
 pymss infer bs_roformer_voc_hyperacev2 \
   -i path/to/input_file_or_folder \
   -o results \
+  --save-as-folder \
   --device auto \
   --format wav
 ```
 
 `--device auto` 在有 NVIDIA GPU 时优先使用 CUDA；Apple Silicon Mac 默认使用 MLX 后端。可以用 `--device mlx` 强制 MLX，或用 `--device mps` 强制 PyTorch MPS。
+`--save-as-folder` 会把每个输入音频的输出音轨保存到以该音频命名的子文件夹中，例如 `results/song/song_vocals.wav`。
 
 默认下载源是 ModelScope。也可以指定下载源或模型目录：
 
@@ -179,6 +181,7 @@ separator = MSSeparator(
         "vocals": "./output/vocals",
         "other": None # None 或缺少此音轨将导致不输出此音轨的文件。 此示例将在 ./output/vocals 中输出人声音轨，并忽略其他（乐器）音轨。 确保键与配置文件匹配。
     },
+    save_as_folder=False,
     audio_params={"wav_bit_depth": "FLOAT", "flac_bit_depth": "PCM_24", "mp3_bit_rate": "320k", "m4a_bit_rate": "192k", "m4a_aac_at_quality": 2}, # 可以省略
     logger=get_separation_logger(), # 可以省略
     debug=False, # 可以省略
@@ -214,6 +217,7 @@ separator.process_folder('path/to/input_folder')
 - output_format: 输出音频格式，默认为 'wav'。 必须是以下之一 ['wav', 'flac', 'mp3', 'm4a']
 - use_tta: 是否使用 TTA（测试时增强），默认为 False。 使用 TTA 会使处理时间增加三倍，但质量会略有提高。
 - store_dirs: 存储目录，可以是单个文件夹路径或带有乐器键的字典。
+- save_as_folder: 为 True 且 store_dirs 指向同一个输出文件夹时，会把每个输入音频的输出音轨保存到以音频名命名的子文件夹中。
 - audio_params: 音频参数，包括 wav_bit_depth、flac_bit_depth、mp3_bit_rate、m4a_bit_rate 和 m4a_aac_at_quality。 默认为 {"wav_bit_depth": "FLOAT", "flac_bit_depth": "PCM_24", "mp3_bit_rate": "320k", "m4a_bit_rate": "192k", "m4a_aac_at_quality": 2}。
 - logger: Logger 实例。 默认为 pymss.get_separation_logger()
 - debug: 是否启用调试模式，默认为 False。
