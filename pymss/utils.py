@@ -792,7 +792,29 @@ def _mlx_fit_length(x, length):
     return x
 
 
-def _mlx_run_model_chunk(model, arr, chunk_size, progress_fraction_callback=None):
+@contextmanager
+def _mlx_clear_cache_after_eval(enabled=False):
+    """Clear MLX allocator cache after explicit eval points when requested."""
+    if not enabled:
+        yield
+        return
+    import mlx.core as mx
+
+    original_eval = mx.eval
+
+    def eval_and_clear(*args, **kwargs):
+        result = original_eval(*args, **kwargs)
+        clear_mlx_cache()
+        return result
+
+    mx.eval = eval_and_clear
+    try:
+        yield
+    finally:
+        mx.eval = original_eval
+
+
+def _mlx_run_model_chunk(model, arr, chunk_size, progress_fraction_callback=None, clear_cache_after_eval=False):
     """Implement the mlx run model chunk helper.
 
     Args:
@@ -802,7 +824,7 @@ def _mlx_run_model_chunk(model, arr, chunk_size, progress_fraction_callback=None
 
     Returns:
         Any: Computed result."""
-    with _model_progress_fraction_context(model, progress_fraction_callback):
+    with _mlx_clear_cache_after_eval(clear_cache_after_eval), _model_progress_fraction_context(model, progress_fraction_callback):
         y = model.mlx_forward_mx(arr)
     if y.ndim == arr.ndim:
         y = y[:, None]
@@ -926,6 +948,7 @@ def demix_track_mlx_full(config, model, mix, device, pbar=False, source_indices=
             mx.stack([chunk for (chunk, _), _ in batch], axis=0),
             C,
             lambda fraction: progress.emit(batch_done_before + round(batch_units * fraction)),
+            clear_cache_after_eval=bool(config.inference.get("mps_mlx_clear_cache", False)),
         )
         chunks = _mlx_select_sources(chunks, source_indices)
         for j, ((_, length), idx) in enumerate(batch):

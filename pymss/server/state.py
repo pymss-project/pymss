@@ -183,6 +183,8 @@ def _is_parameter_supported(config, model_type, key, section_name):
         bool: True when the condition is satisfied."""
     if model_type == "vr" and key in VR_SUPPORTED_PARAMETERS:
         return True
+    if key == "mps_mlx_clear_cache" and model_type != "vr":
+        return True
     # standardize is legacy input standardization backed by MSS YAML inference.normalize.
     # normalize is output peak normalization owned by runtime inference params.
     config_key = "normalize" if key == "standardize" else key
