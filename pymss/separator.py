@@ -87,6 +87,7 @@ def _resolve_public_device(device, inference_params, logger):
             raise RuntimeError("device='mlx' requires Apple Silicon MPS support")
         inference_params.setdefault("mps_model_backend", "mlx_full")
         inference_params.setdefault("mps_model_compute_dtype", "float16")
+        inference_params.setdefault("mps_mlx_clear_cache", True)
         logger.debug("Mapping device='mlx' to device='mps' with MLX full model backend")
         return "mps", inference_params
     if requested_device not in {"auto", "cpu", "cuda", "mps"}:
@@ -133,7 +134,10 @@ def _prefer_mlx_for_auto(requested_device, selected_device, inference_params, lo
         if "mps_model_backend" not in inference_params:
             inference_params["mps_model_backend"] = "mlx_full"
             inference_params.setdefault("mps_model_compute_dtype", "float16")
+            inference_params.setdefault("mps_mlx_clear_cache", True)
             logger.debug("Auto device selected MPS, enabling MLX full model backend")
+        elif inference_params.get("mps_model_backend") == "mlx_full":
+            inference_params.setdefault("mps_mlx_clear_cache", True)
     return inference_params
 
 
