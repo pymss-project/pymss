@@ -154,3 +154,13 @@ def test_load_rejects_invalid_inference_parameter_value(asgi_client_factory, fak
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_inference_parameter"
     assert loaded == []
+
+
+def test_load_accepts_mps_mlx_clear_cache_parameter(asgi_client_factory, fake_loader):
+    loaded = fake_loader()
+    response = asgi_client_factory(create_app(ServerConfig())).post(
+        "/v1/models/load",
+        json={"model": "model-a", "inference_params": {"mps_mlx_clear_cache": True}},
+    )
+    assert response.status_code == 200
+    assert len(loaded) == 1

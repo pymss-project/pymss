@@ -52,6 +52,7 @@ steps:
 
 _STEP_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _OUTPUT_FORMATS = {"wav", "flac", "mp3", "m4a"}
+_OUTPUT_LAYOUTS = {"folders", "flat"}
 _DEFAULT_AUDIO_PARAMS = {
     "wav_bit_depth": "FLOAT",
     "flac_bit_depth": "PCM_24",
@@ -209,6 +210,7 @@ class WorkflowRunner:
         audio_loader: Callable[..., Any] | None = None,
         audio_saver: Callable[..., Any] | None = None,
         continue_on_error: bool = False,
+        output_layout: str = "folders",
     ):
         self.workflow = validate_workflow(workflow)
         self.model_dir = model_dir
@@ -224,19 +226,19 @@ class WorkflowRunner:
         self.audio_loader = audio_loader or _default_audio_loader
         self.audio_saver = audio_saver or _default_audio_saver
         self.continue_on_error = bool(continue_on_error)
+        self.output_layout = _validate_output_layout(output_layout)
 
     def run(self, input_path: str | os.PathLike, output_dir: str | os.PathLike) -> list[str]:
         """Run the workflow and return successfully processed basenames."""
         paths = _input_files(input_path)
         output_root = Path(output_dir)
         processed = []
-        for path in paths:
-            if self._run_one(path, output_root):
+        for path, track_name in zip(paths, _unique_track_names(paths)):
+            if self._run_one(path, output_root, track_name):
                 processed.append(os.path.basename(path))
         return processed
 
-    def _run_one(self, path: str, output_root: Path) -> bool:
-        track_name = Path(path).stem
+    def _run_one(self, path: str, output_root: Path, track_name: str) -> bool:
         try:
             mix, sr = self.audio_loader(path, sr=None, mono=False)
             artifacts: dict[str, AudioArtifact] = {"input": AudioArtifact(_to_model_audio(mix), int(sr))}
@@ -310,7 +312,9 @@ class WorkflowRunner:
         for stem, audio in results.items():
             save_dirs = _save_dirs(step, stem)
             for save_dir in save_dirs:
-                target_dir = output_root / track_name / save_dir
+                target_dir = output_root / save_dir
+                if self.output_layout == "folders":
+                    target_dir = output_root / track_name / save_dir
                 target_dir.mkdir(parents=True, exist_ok=True)
                 safe_stem = _safe_filename_part(stem)
                 target = target_dir / f"{track_name}_{safe_stem}.{output_format}"
@@ -344,6 +348,13 @@ def run_workflow_file(
     """Load and run a workflow file."""
     workflow = load_workflow_file(config_path)
     return WorkflowRunner(workflow, **runner_kwargs).run(input_path, output_dir)
+
+
+def _validate_output_layout(value: str) -> str:
+    layout = str(value).strip().lower()
+    if layout not in _OUTPUT_LAYOUTS:
+        raise WorkflowError(f"output_layout must be one of: {sorted(_OUTPUT_LAYOUTS)}.")
+    return layout
 
 
 def _parse_step(index: int, data: Any) -> WorkflowStep:
@@ -587,6 +598,28 @@ def _input_files(input_path: str | os.PathLike) -> list[str]:
     if path.is_dir():
         return [str(item) for item in sorted(path.iterdir()) if item.is_file()]
     raise WorkflowError(f"Input path does not exist: {path}")
+
+
+def _unique_track_names(paths: list[str]) -> list[str]:
+    original_stems = {Path(path).stem for path in paths}
+    next_suffix: dict[str, int] = {}
+    used: set[str] = set()
+    names = []
+    for path in paths:
+        stem = Path(path).stem
+        if stem not in used:
+            used.add(stem)
+            names.append(stem)
+            continue
+        suffix = next_suffix.get(stem, 2)
+        candidate = f"{stem}_{suffix}"
+        while candidate in used or candidate in original_stems:
+            suffix += 1
+            candidate = f"{stem}_{suffix}"
+        next_suffix[stem] = suffix + 1
+        used.add(candidate)
+        names.append(candidate)
+    return names
 
 
 def _step_option(workflow: Workflow, step: WorkflowStep, key: str, override: Any = None) -> Any:

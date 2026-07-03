@@ -62,6 +62,37 @@ def test_catalog_model_detail_resolves_alias_and_omits_local_path(
     assert files[0]["remote_url"].startswith("https://default.example/models/")
 
 
+def test_catalog_model_detail_reads_training_instruments_from_local_config(
+    asgi_client_factory,
+    catalog_entry_factory,
+    install_model_catalog,
+    write_catalog_entry_files,
+    tmp_path,
+):
+    entry = catalog_entry_factory("model-a.ckpt")
+    install_model_catalog([entry])
+    write_catalog_entry_files(tmp_path, entry)
+    config_path = tmp_path / entry.config_relpath
+    config_path.write_text(
+        """
+training:
+  instruments:
+    - vocals
+    - instrument
+  target_instrument: vocals
+""".lstrip(),
+        encoding="utf-8",
+    )
+    response_client = asgi_client_factory(create_app(ServerConfig(model_dir=str(tmp_path))))
+
+    response = response_client.get("/v1/catalog/models/model-a.ckpt")
+
+    assert response.status_code == 200
+    pymss = response.json()["pymss"]
+    assert pymss["config_instruments"] == "vocals|instrument"
+    assert pymss["config_target_instrument"] == "vocals"
+
+
 def test_new_management_endpoints_require_api_key(
     asgi_client_factory,
     catalog_entry_factory,

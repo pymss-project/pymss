@@ -41,7 +41,7 @@ def test_download_model_uses_default_source_and_returns_local_status(
             "endpoint": "https://default.example",
             "verify": False,
             "force": False,
-            "timeout": 12.0,
+            "timeout": 12,
         }
     ]
 
@@ -67,6 +67,25 @@ def test_download_model_skips_complete_local_model_without_force(
     assert body["model"]["pymss"]["local"]["complete"] is True
     assert body["downloaded"] == []
     assert body["skipped"] == ["vocal/test/model-a.ckpt", "vocal/test/model-a.yaml"]
+
+
+def test_download_model_default_timeout_is_integer(
+    asgi_client_factory,
+    catalog_entry_factory,
+    install_model_catalog,
+    install_fake_model_download,
+    tmp_path,
+):
+    entry = catalog_entry_factory("model-a.ckpt")
+    lookup = install_model_catalog([entry])
+    calls = install_fake_model_download(lookup, tmp_path)
+    response_client = asgi_client_factory(create_app(ServerConfig(model_dir=str(tmp_path))))
+
+    response = response_client.post("/v1/models/download", json={"model": "model-a"})
+
+    assert response.status_code == 200
+    assert calls[-1]["timeout"] == 30
+    assert isinstance(calls[-1]["timeout"], int)
 
 
 def test_download_result_does_not_expose_paths_outside_model_dir(

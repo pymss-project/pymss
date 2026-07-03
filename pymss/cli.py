@@ -255,6 +255,7 @@ def cmd_workflow_run(args):
         download=args.download,
         source=args.source,
         endpoint=args.endpoint,
+        output_layout=args.output_layout,
         audio_params={
             "wav_bit_depth": args.wav_bit_depth,
             "flac_bit_depth": args.flac_bit_depth,
@@ -491,6 +492,15 @@ def build_parser():
     workflow_run_parser.add_argument("-c", "--config", required=True, help="Workflow YAML/JSON file.")
     workflow_run_parser.add_argument("-i", "--input", required=True, help="Input audio file or folder.")
     workflow_run_parser.add_argument("-o", "--output", default="results", help="Output folder.")
+    workflow_run_parser.add_argument(
+        "--output-layout",
+        default="folders",
+        choices=["folders", "flat"],
+        help=(
+            "Workflow output layout. 'folders' keeps each input under <output>/<audio>/; "
+            "'flat' writes outputs directly under the workflow task folder and save subfolders."
+        ),
+    )
     workflow_run_parser.add_argument(
         "--model-dir",
         help="Local model cache directory. Workflow step model_dir values take precedence.",

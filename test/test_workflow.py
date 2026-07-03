@@ -95,6 +95,75 @@ def test_workflow_run_chains_step_outputs_and_saves_selected_stems(tmp_path):
     ]
 
 
+def test_workflow_run_can_flatten_outputs_to_task_folder(tmp_path):
+    workflow = load_workflow_data(
+        {
+            "version": 1,
+            "steps": [
+                {
+                    "id": "split",
+                    "model": "split-model",
+                    "input": "input",
+                    "stems": ["vocals", "other"],
+                    "save": {"vocals": "vocal", "other": "other"},
+                },
+            ],
+        }
+    )
+    saved = []
+    (tmp_path / "song.wav").write_bytes(b"fake")
+
+    runner = WorkflowRunner(
+        workflow,
+        separator_factory=lambda model_name, **_kwargs: FakeSeparator(model_name, []),
+        audio_loader=lambda *_args, **_kwargs: (np.zeros((2, 4), dtype=np.float32), 44100),
+        audio_saver=lambda path, *_args: saved.append(Path(path).relative_to(tmp_path)),
+        output_layout="flat",
+    )
+
+    assert runner.run(str(tmp_path / "song.wav"), tmp_path) == ["song.wav"]
+    assert [path.as_posix() for path in saved] == [
+        "vocal/song_vocals.wav",
+        "other/song_other.wav",
+    ]
+
+
+def test_workflow_flat_output_disambiguates_duplicate_input_stems(tmp_path):
+    workflow = load_workflow_data(
+        {
+            "version": 1,
+            "steps": [
+                {
+                    "id": "split",
+                    "model": "split-model",
+                    "input": "input",
+                    "stems": ["vocals"],
+                    "save": {"vocals": "vocal"},
+                },
+            ],
+        }
+    )
+    saved = []
+    (tmp_path / "song.flac").write_bytes(b"fake")
+    (tmp_path / "song.wav").write_bytes(b"fake")
+    (tmp_path / "song_2.wav").write_bytes(b"fake")
+
+    runner = WorkflowRunner(
+        workflow,
+        separator_factory=lambda model_name, **_kwargs: FakeSeparator(model_name, []),
+        audio_loader=lambda *_args, **_kwargs: (np.zeros((2, 4), dtype=np.float32), 44100),
+        audio_saver=lambda path, *_args: saved.append(Path(path).relative_to(tmp_path)),
+        output_layout="flat",
+    )
+
+    assert runner.run(tmp_path, tmp_path) == ["song.flac", "song.wav", "song_2.wav"]
+    assert [path.as_posix() for path in saved] == [
+        "vocal/song_vocals.wav",
+        "vocal/song_3_vocals.wav",
+        "vocal/song_2_vocals.wav",
+    ]
+
+
 def test_validate_workflow_rejects_unknown_step_reference():
     workflow = load_workflow_data(
         {
