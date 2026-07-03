@@ -95,6 +95,69 @@ def test_workflow_run_chains_step_outputs_and_saves_selected_stems(tmp_path):
     ]
 
 
+def test_workflow_batches_all_inputs_by_step(tmp_path):
+    workflow = load_workflow_data(
+        {
+            "version": 1,
+            "steps": [
+                {
+                    "id": "split",
+                    "model": "split-model",
+                    "input": "input",
+                    "stems": ["vocals", "other"],
+                    "save": {"other": "other"},
+                },
+                {
+                    "id": "dereverb",
+                    "model": "dereverb-model",
+                    "input": "split.other",
+                    "stems": ["Dry"],
+                    "save": {"Dry": "dry"},
+                },
+            ],
+        }
+    )
+    events = []
+    (tmp_path / "a.wav").write_bytes(b"fake")
+    (tmp_path / "b.wav").write_bytes(b"fake")
+
+    class BatchSeparator(FakeSeparator):
+        def separate(self, mix, pbar=False, stems=None):
+            events.append(("separate", self.model_name, int(np.asarray(mix).flat[0])))
+            return super().separate(mix, pbar=pbar, stems=stems)
+
+        def close(self):
+            events.append(("close", self.model_name))
+            super().close()
+
+    def separator_factory(model_name, **_kwargs):
+        events.append(("open", model_name))
+        return BatchSeparator(model_name, [])
+
+    def audio_loader(path, sr=None, mono=False):
+        value = 1 if Path(path).name == "a.wav" else 10
+        return np.full((2, 4), value, dtype=np.float32), 44100
+
+    runner = WorkflowRunner(
+        workflow,
+        separator_factory=separator_factory,
+        audio_loader=audio_loader,
+        audio_saver=lambda *_args, **_kwargs: None,
+    )
+
+    assert runner.run(tmp_path, tmp_path) == ["a.wav", "b.wav"]
+    assert events == [
+        ("open", "split-model"),
+        ("separate", "split-model", 1),
+        ("separate", "split-model", 10),
+        ("close", "split-model"),
+        ("open", "dereverb-model"),
+        ("separate", "dereverb-model", 3),
+        ("separate", "dereverb-model", 12),
+        ("close", "dereverb-model"),
+    ]
+
+
 def test_workflow_run_can_flatten_outputs_to_task_folder(tmp_path):
     workflow = load_workflow_data(
         {

@@ -97,6 +97,14 @@ class AudioArtifact:
     sample_rate: int
 
 
+@dataclass
+class WorkflowTrackState:
+    path: str
+    track_name: str
+    artifacts: dict[str, AudioArtifact] = field(default_factory=dict)
+    active: bool = True
+
+
 def load_workflow_file(path: str | os.PathLike) -> Workflow:
     """Load a workflow YAML/JSON file."""
     workflow_path = Path(path)
@@ -232,37 +240,71 @@ class WorkflowRunner:
         """Run the workflow and return successfully processed basenames."""
         paths = _input_files(input_path)
         output_root = Path(output_dir)
-        processed = []
-        for path, track_name in zip(paths, _unique_track_names(paths)):
-            if self._run_one(path, output_root, track_name):
-                processed.append(os.path.basename(path))
-        return processed
+        tracks = [
+            track
+            for path, track_name in zip(paths, _unique_track_names(paths))
+            for track in [self._load_track(path, track_name)]
+            if track is not None
+        ]
+        for step in self.workflow.steps:
+            active_tracks = [track for track in tracks if track.active]
+            if not active_tracks:
+                break
+            try:
+                with self._open_separator(step) as separator:
+                    for track in active_tracks:
+                        self._run_step_for_track(step, separator, track, output_root)
+            except Exception as exc:
+                if not self.continue_on_error:
+                    raise
+                for track in active_tracks:
+                    self._mark_track_failed(track, exc)
+        return [os.path.basename(track.path) for track in tracks if track.active]
 
-    def _run_one(self, path: str, output_root: Path, track_name: str) -> bool:
+    def _load_track(self, path: str, track_name: str) -> WorkflowTrackState | None:
         try:
             mix, sr = self.audio_loader(path, sr=None, mono=False)
-            artifacts: dict[str, AudioArtifact] = {"input": AudioArtifact(_to_model_audio(mix), int(sr))}
-            for step in self.workflow.steps:
-                artifact = _resolve_input_artifact(artifacts, step.input)
-                with self._open_separator(step) as separator:
-                    sample_rate = int(separator.config.audio.get("sample_rate", artifact.sample_rate))
-                    model_audio = _ensure_sample_rate(_to_model_audio(artifact.audio), artifact.sample_rate, sample_rate)
-                    stems = _requested_stems(step)
-                    if getattr(separator, "model_type", None) == "vr":
-                        results = separator.separate(model_audio, pbar=False)
-                    else:
-                        results = separator.separate(model_audio, pbar=False, stems=stems)
-                    selected = _select_results(step, results)
-                    for stem, audio in selected.items():
-                        artifacts[f"{step.id}.{stem}"] = AudioArtifact(_to_model_audio(audio), sample_rate)
-                    self._save_results(step, selected, sample_rate, output_root, track_name)
-                    del selected, results
-            return True
+            return WorkflowTrackState(
+                path=path,
+                track_name=track_name,
+                artifacts={"input": AudioArtifact(_to_model_audio(mix), int(sr))},
+            )
         except Exception as exc:
             if self.continue_on_error and self.logger is not None:
                 self.logger.warning("Cannot process workflow track %s: %s", path, exc)
-                return False
+                return None
             raise
+
+    def _run_step_for_track(
+        self,
+        step: WorkflowStep,
+        separator: Any,
+        track: WorkflowTrackState,
+        output_root: Path,
+    ) -> None:
+        try:
+            artifact = _resolve_input_artifact(track.artifacts, step.input)
+            sample_rate = int(separator.config.audio.get("sample_rate", artifact.sample_rate))
+            model_audio = _ensure_sample_rate(_to_model_audio(artifact.audio), artifact.sample_rate, sample_rate)
+            stems = _requested_stems(step)
+            if getattr(separator, "model_type", None) == "vr":
+                results = separator.separate(model_audio, pbar=False)
+            else:
+                results = separator.separate(model_audio, pbar=False, stems=stems)
+            selected = _select_results(step, results)
+            for stem, audio in selected.items():
+                track.artifacts[f"{step.id}.{stem}"] = AudioArtifact(_to_model_audio(audio), sample_rate)
+            self._save_results(step, selected, sample_rate, output_root, track.track_name)
+            del selected, results
+        except Exception as exc:
+            if not self.continue_on_error:
+                raise
+            self._mark_track_failed(track, exc)
+
+    def _mark_track_failed(self, track: WorkflowTrackState, exc: Exception) -> None:
+        track.active = False
+        if self.logger is not None:
+            self.logger.warning("Cannot process workflow track %s: %s", track.path, exc)
 
     def _open_separator(self, step: WorkflowStep):
         if self.download and step.model:
