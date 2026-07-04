@@ -20,10 +20,10 @@ def test_progress_emit_updates_bar_from_absolute_done():
 
     assert progress.bar.updates == [10, 15, 75]
     assert events == [
-        (0, 100, "Processing audio chunks"),
-        (10, 100, "Processing audio chunks"),
-        (25, 100, "Processing audio chunks"),
-        (100, 100, "Processing audio chunks"),
+        (0, 100, "Processing audio"),
+        (10, 100, "Processing audio"),
+        (25, 100, "Processing audio"),
+        (100, 100, "Processing audio"),
     ]
 
 
@@ -36,4 +36,4 @@ def test_progress_update_reuses_absolute_emit_path():
     progress.update(80)
 
     assert progress.bar.updates == [30, 70]
-    assert events[-1] == (100, 100, "Processing audio chunks")
+    assert events[-1] == (100, 100, "Processing audio")

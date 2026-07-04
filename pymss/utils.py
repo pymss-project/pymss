@@ -16,56 +16,6 @@ def _model_target(model):
     return model.module if isinstance(model, nn.DataParallel) else model
 
 
-def _progress_leaf_modules(module):
-    ignored = (nn.Dropout, nn.Identity)
-    modules = [
-        child
-        for child in module.modules()
-        if child is not module and not isinstance(child, ignored) and not any(child.children())
-    ]
-    max_hooks = 200
-    if len(modules) <= max_hooks:
-        return modules
-    stride = max(1, len(modules) // max_hooks)
-    return modules[::stride][:max_hooks]
-
-
-@contextmanager
-def _model_progress_fraction_context(model, callback):
-    target = _model_target(model)
-    sentinel = object()
-    previous = getattr(target, "_pymss_progress_fraction_callback", sentinel)
-    handles = []
-    if callback is not None:
-        if hasattr(target, "_emit_progress_fraction"):
-            target._pymss_progress_fraction_callback = callback
-        else:
-            modules = _progress_leaf_modules(target)
-            state = {"done": 0, "last": -1.0}
-            total = max(1, len(modules))
-            min_delta = 1 / max(total, 100)
-
-            def on_forward(_module, _inputs, _output):
-                state["done"] += 1
-                fraction = min(0.98, state["done"] / total)
-                if fraction >= state["last"] + min_delta or fraction >= 0.98:
-                    state["last"] = fraction
-                    callback(fraction)
-
-            handles = [module.register_forward_hook(on_forward) for module in modules]
-    try:
-        yield
-    finally:
-        for handle in handles:
-            handle.remove()
-        if callback is not None and hasattr(target, "_emit_progress_fraction"):
-            if previous is sentinel:
-                if hasattr(target, "_pymss_progress_fraction_callback"):
-                    delattr(target, "_pymss_progress_fraction_callback")
-            else:
-                target._pymss_progress_fraction_callback = previous
-
-
 def get_model_from_config(model_type, config_path, model_kwargs_override=None):
     """Instantiate a separation model from a loaded model config.
 
@@ -441,7 +391,7 @@ def _select_sources(chunks, source_indices, already_selected=False):
     return chunks.index_select(1, index)
 
 
-def _run_model_chunk(model, arr, chunk_size, source_indices=None, progress_fraction_callback=None):
+def _run_model_chunk(model, arr, chunk_size, source_indices=None):
     """Run model chunk.
 
     Args:
@@ -453,8 +403,7 @@ def _run_model_chunk(model, arr, chunk_size, source_indices=None, progress_fract
     Returns:
         Any: Computed result."""
     target = _model_target(model)
-    with _model_progress_fraction_context(model, progress_fraction_callback):
-        chunks = _fit_tensor_length(_ensure_source_dim(model(arr), arr).float(), chunk_size)
+    chunks = _fit_tensor_length(_ensure_source_dim(model(arr), arr).float(), chunk_size)
     already_selected = (
         source_indices is not None and hasattr(target, "_active_source_indices") and chunks.shape[1] == len(source_indices)
     )
@@ -545,15 +494,7 @@ def _run_complete_chunks(
 
     for batch_start in range(0, n_complete, batch_size):
         batch_end = min(batch_start + batch_size, n_complete)
-        batch_done_before = progress.done
-        batch_units = step * (batch_end - batch_start)
-        chunks = _run_model_chunk(
-            model,
-            inputs[batch_start:batch_end].contiguous(),
-            chunk_size,
-            source_indices,
-            lambda fraction: progress.emit(batch_done_before + round(batch_units * fraction)),
-        )
+        chunks = _run_model_chunk(model, inputs[batch_start:batch_end].contiguous(), chunk_size, source_indices)
         _fold_chunk_batch(
             result,
             chunks,
@@ -602,15 +543,7 @@ def _run_tail_chunks(
         batch_indices = range(batch_start, min(batch_start + batch_size, len(starts)))
         batch = [(_extract_chunk(mix, starts[idx], chunk_size), idx) for idx in batch_indices]
         batch_data = [chunk for (chunk, _), _ in batch]
-        batch_done_before = progress.done
-        batch_units = step * len(batch_data)
-        chunks = _run_model_chunk(
-            model,
-            torch.stack(batch_data, dim=0),
-            chunk_size,
-            source_indices,
-            lambda fraction: progress.emit(batch_done_before + round(batch_units * fraction)),
-        )
+        chunks = _run_model_chunk(model, torch.stack(batch_data, dim=0), chunk_size, source_indices)
         for j, ((_, length), idx) in enumerate(batch):
             start = starts[idx]
             _add_weighted_chunk(result, counter, chunks[j], windows[idx], start, length)
@@ -814,7 +747,7 @@ def _mlx_clear_cache_after_eval(enabled=False):
         mx.eval = original_eval
 
 
-def _mlx_run_model_chunk(model, arr, chunk_size, progress_fraction_callback=None, clear_cache_after_eval=False):
+def _mlx_run_model_chunk(model, arr, chunk_size, clear_cache_after_eval=False):
     """Implement the mlx run model chunk helper.
 
     Args:
@@ -824,7 +757,7 @@ def _mlx_run_model_chunk(model, arr, chunk_size, progress_fraction_callback=None
 
     Returns:
         Any: Computed result."""
-    with _mlx_clear_cache_after_eval(clear_cache_after_eval), _model_progress_fraction_context(model, progress_fraction_callback):
+    with _mlx_clear_cache_after_eval(clear_cache_after_eval):
         y = model.mlx_forward_mx(arr)
     if y.ndim == arr.ndim:
         y = y[:, None]
@@ -941,13 +874,10 @@ def demix_track_mlx_full(config, model, mix, device, pbar=False, source_indices=
         batch_indices = range(batch_start, min(batch_start + batch_size, len(starts)))
         batch = [(_mlx_extract_chunk(mix, starts[idx], C), idx) for idx in batch_indices]
         batch_count = len(batch)
-        batch_done_before = progress.done
-        batch_units = step * batch_count
         chunks = _mlx_run_model_chunk(
             model,
             mx.stack([chunk for (chunk, _), _ in batch], axis=0),
             C,
-            lambda fraction: progress.emit(batch_done_before + round(batch_units * fraction)),
             clear_cache_after_eval=bool(config.inference.get("mps_mlx_clear_cache", False)),
         )
         chunks = _mlx_select_sources(chunks, source_indices)
