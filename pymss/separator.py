@@ -70,6 +70,45 @@ OUTPUT_NORMALIZE_TARGET_DBFS = -0.01
 OUTPUT_NORMALIZE_PEAK = 10 ** (OUTPUT_NORMALIZE_TARGET_DBFS / 20)
 
 
+def _is_rocm_torch_build():
+    return bool(getattr(torch.version, "hip", None))
+
+
+def _cuda_runtime_name():
+    return "ROCm/HIP" if _is_rocm_torch_build() else "CUDA"
+
+
+def _benchmark_backends():
+    backends = []
+    for name in ("cudnn", "miopen"):
+        backend = getattr(torch.backends, name, None)
+        if backend is not None and hasattr(backend, "benchmark"):
+            backends.append((name, backend))
+    return backends
+
+
+def _enable_accelerator_benchmark(logger):
+    state = {}
+    for name, backend in _benchmark_backends():
+        try:
+            state[name] = backend.benchmark
+            backend.benchmark = True
+        except Exception as exc:
+            logger.debug(f"Could not enable torch.backends.{name}.benchmark: {exc}")
+    return state
+
+
+def _restore_accelerator_benchmark(logger, state):
+    for name, initial in (state or {}).items():
+        backend = getattr(torch.backends, name, None)
+        if backend is None or not hasattr(backend, "benchmark"):
+            continue
+        try:
+            backend.benchmark = initial
+        except Exception as exc:
+            logger.debug(f"Could not restore torch.backends.{name}.benchmark: {exc}")
+
+
 def _resolve_public_device(device, inference_params, logger):
     """Resolve public device.
 
@@ -107,7 +146,7 @@ def _select_device(device, device_ids, logger):
         Any: Computed result."""
     if device not in ["cpu", "cuda", "mps"]:
         if torch.cuda.is_available():
-            logger.debug("CUDA is available in Torch, setting Torch device to CUDA")
+            logger.debug(f"{_cuda_runtime_name()} is available in Torch, setting Torch device to CUDA")
             return f"cuda:{device_ids[0]}"
         if torch.backends.mps.is_available():
             logger.debug("Apple Silicon MPS/CoreML is available in Torch, setting Torch device to MPS")
@@ -815,8 +854,7 @@ class MSSeparator:
         self.device = _select_device(device, self.device_ids, self.logger)
         self.inference_params = _prefer_mlx_for_auto(device, self.device, self.inference_params, self.logger)
 
-        self._cudnn_benchmark_initial = torch.backends.cudnn.benchmark
-        torch.backends.cudnn.benchmark = True
+        self._accelerator_benchmark_initial = _enable_accelerator_benchmark(self.logger)
         self.logger.info(f"Using device: {self.device}, device_ids: {self.device_ids}")
 
         self.model, self.config = self.load_model()
@@ -939,6 +977,10 @@ class MSSeparator:
 
         pytorch_version = torch.__version__
         self.logger.debug(f"PyTorch Version: {pytorch_version}")
+        if getattr(torch.version, "cuda", None):
+            self.logger.debug(f"PyTorch CUDA Runtime: {torch.version.cuda}")
+        if getattr(torch.version, "hip", None):
+            self.logger.debug(f"PyTorch HIP Runtime: {torch.version.hip}")
 
     def check_ffmpeg_installed(self):
         """Check whether the ``ffmpeg`` executable is available.
@@ -1586,30 +1628,23 @@ class MSSeparator:
                 except Exception as exc:
                     self.logger.debug(f"Could not move model to CPU during close: {exc}")
         finally:
-            self._restore_cudnn_benchmark()
+            self._restore_accelerator_benchmark()
             self.model = None
             self.config = None
             self.store_dirs = {}
             self.del_cache()
 
-    def _restore_cudnn_benchmark(self):
-        """Restore ``torch.backends.cudnn.benchmark`` to its pre-init value.
+    def _restore_accelerator_benchmark(self):
+        """Restore accelerator benchmark flags to their pre-init values.
 
         Args:
             None: This callable does not accept user-provided arguments.
 
         Returns:
-            None: When the separator captured an initial ``cudnn.benchmark``
-            value during initialization, the global flag is restored to that
-            value so downstream modules observe the same state as before
-            pymss ran."""
-        initial = getattr(self, "_cudnn_benchmark_initial", None)
-        if initial is None:
-            return
-        try:
-            torch.backends.cudnn.benchmark = initial
-        except Exception as exc:
-            self.logger.debug(f"Could not restore torch.backends.cudnn.benchmark: {exc}")
+            None: Any captured benchmark flags such as ``cudnn.benchmark`` or
+            ``miopen.benchmark`` are restored so downstream modules observe the
+            same state as before pymss ran."""
+        _restore_accelerator_benchmark(self.logger, getattr(self, "_accelerator_benchmark_initial", None))
 
     def del_cache(self):
         """Run garbage collection and clear accelerator memory caches.
@@ -1618,8 +1653,8 @@ class MSSeparator:
             None: This callable does not accept user-provided arguments.
 
         Returns:
-            None: Python garbage collection runs, and CUDA or MPS/MLX caches are
-            emptied for the active device."""
+            None: Python garbage collection runs, and CUDA/ROCm or MPS/MLX
+            caches are emptied for the active device."""
         self.logger.debug("Running garbage collection...")
         gc.collect()
         if "mps" in self.device:
@@ -1627,5 +1662,5 @@ class MSSeparator:
             torch.mps.empty_cache()
             clear_mlx_cache()
         if "cuda" in self.device:
-            self.logger.debug("Clearing CUDA cache...")
+            self.logger.debug(f"Clearing {_cuda_runtime_name()} cache...")
             torch.cuda.empty_cache()
