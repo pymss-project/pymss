@@ -5,10 +5,13 @@ Python package for music source separation. <br>
 
 ## Install
 
-If you want the CUDA build of PyTorch, install it first:
+Install a PyTorch build that matches your accelerator first:
 
 ```sh
+# NVIDIA CUDA example
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+# AMD ROCm: follow https://pytorch.org/get-started/locally/ and choose the ROCm wheel for your Linux stack
 ```
 
 For CLI and Python API usage, install:
@@ -78,7 +81,7 @@ pymss infer bs_roformer_voc_hyperacev2 \
   --format wav
 ```
 
-`--device auto` uses CUDA first when an NVIDIA GPU is available. On Apple Silicon it uses the MLX backend by default. Use `--device mlx` to force MLX, or `--device mps` to force PyTorch MPS.
+`--device auto` uses Torch CUDA devices first, including ROCm/HIP builds on Linux. On Apple Silicon it uses the MLX backend by default. Use `--device mlx` to force MLX, or `--device mps` to force PyTorch MPS.
 `--save-as-folder` writes each input audio file's stems under a subfolder named after that audio file, for example `results/song/song_vocals.wav`.
 
 The default download source is ModelScope. You can choose another source or model directory:
@@ -229,7 +232,7 @@ For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator
 
 ### CUDA Attention Backend
 
-RoFormer-family models default to cuDNN attention on CUDA when the installed PyTorch build exposes it, otherwise they use PyTorch's default SDPA path. Override with `inference_params={"cuda_attention_backend": "auto"}` if you want fallback probing. Valid values are `auto`, `default`, `flash`, `cudnn`, `efficient`, `math`, and `xformers`. `auto` tries cuDNN attention first, then PyTorch memory-efficient SDPA, then PyTorch default SDPA. `xformers` is optional and only used if installed locally; it is not a required dependency.
+RoFormer-family models default to cuDNN attention on CUDA when the installed PyTorch build exposes it. On ROCm/HIP builds they default to PyTorch's standard SDPA path. Override with `inference_params={"cuda_attention_backend": "auto"}` if you want fallback probing. Valid values are `auto`, `default`, `flash`, `cudnn`, `efficient`, `math`, and `xformers`. `auto` tries cuDNN attention first on CUDA builds, or memory-efficient SDPA first on ROCm/HIP builds, before falling back to PyTorch default SDPA. `xformers` is optional and only used if installed locally; it is not a required dependency.
 
 ### Apple Silicon MLX Backend
 
@@ -295,54 +298,35 @@ inference:
   overlap_size: 24000  # 5% of chunk_size
 ```
 
-### RTX 5090 Benchmark
+### ROCm Benchmark
 
-Measured on an NVIDIA GeForce RTX 5090 with PyTorch 2.9.1+cu128, CUDA 12.8, no TTA, one warmup and three measured runs.
+Measured on a Linux ROCm/HIP environment with PyTorch 2.11.0+rocm7.2 on a gfx1100 AMD GPU. Tests used a 10-minute WAV input, no TTA, one warmup run, and three measured runs. Timing covers separation only, not model loading or writing output files.
 
 | model | type | RTFx | 1-hour audio |
 |---|---|---:|---:|
-| BS-Roformer-HyperACE_v2_voc | bs_roformer | 231.83x | 15.5s |
-| model_bs_roformer_ep_368_sdr_12.9628 | bs_roformer | 109.06x | 33.0s |
-| logic_bs_roformer | bs_roformer | 159.71x | 22.5s |
-| mel-band-roformer-deux | mel_band_roformer | 169.93x | 21.2s |
-| Mel-Band-Roformer-big | mel_band_roformer | 194.05x | 18.6s |
-| model_vocals_mdx23c_sdr_10.17 | mdx23c | 209.41x | 17.2s |
-| HTDemucs4 | htdemucs | 200.52x | 18.0s |
-| scnet_checkpoint_musdb18 | scnet | 356.85x | 10.1s |
-| model_bandit_plus_dnr_sdr_11.47 | bandit | 122.76x | 29.3s |
-| checkpoint-multi_state_dict | bandit_v2 | 112.33x | 32.0s |
-| Apollo_LQ_MP3_restoration | apollo | 100.62x | 35.8s |
+| BS-Roformer-HyperACE_v2_voc | bs_roformer | 38.90x | 92.5s |
+| model_bs_roformer_ep_368_sdr_12.9628 | bs_roformer | 30.27x | 118.9s |
+| logic_bs_roformer | bs_roformer | 43.73x | 82.3s |
+| mel-band-roformer-deux | mel_band_roformer | 38.69x | 93.0s |
+| Mel-Band-Roformer-big, ep3005 candidate | mel_band_roformer | 35.83x | 100.5s |
+| Mel-Band-Roformer-big, beta4 candidate | mel_band_roformer | 33.08x | 108.8s |
+| HTDemucs4 | htdemucs | 14.19x | 253.7s |
+| scnet_checkpoint_musdb18 | scnet | 25.45x | 141.5s |
+| model_bandit_plus_dnr_sdr_11.47 | bandit | 3.31x | 1087.6s |
+| checkpoint-multi_state_dict, checkpoint-eng_state_dict candidate | bandit_v2 | 7.04x | 511.4s |
+| Apollo_LQ_MP3_restoration | apollo | 7.87x | 457.4s |
 
 VR models were measured with `batch_size=2`, `window_size=512`, `aggression=5`, TTA off, post-processing off.
 
 | VR model | RTFx | 1-hour audio |
 |---|---:|---:|
-| UVR-DeNoise-Lite | 243.62x | 14.8s |
-| Harmonic_Noise_Separation_yxlllc | 221.22x | 16.3s |
-| MGM_HIGHEND_v4 | 217.39x | 16.6s |
-| MGM_LOWEND_A_v4 | 133.67x | 26.9s |
-| MGM_MAIN_v4 | 118.56x | 30.4s |
-| 11_SP-UVR-2B-32000-2 | 109.73x | 32.8s |
-| 10_SP-UVR-2B-32000-1 | 109.03x | 33.0s |
-| 12_SP-UVR-3B-44100 | 104.67x | 34.4s |
-| MGM_LOWEND_B_v4 | 100.64x | 35.8s |
-| 15_SP-UVR-MID-44100-1 | 99.00x | 36.4s |
-| 16_SP-UVR-MID-44100-2 | 98.76x | 36.5s |
-| 13_SP-UVR-4B-44100-1 | 97.78x | 36.8s |
-| 14_SP-UVR-4B-44100-2 | 94.97x | 37.9s |
-| 5_HP-Karaoke-UVR | 94.72x | 38.0s |
-| 2_HP-UVR | 93.94x | 38.3s |
-| UVR-De-Echo-Aggressive | 90.99x | 39.6s |
-| UVR-DeNoise | 90.39x | 39.8s |
-| UVR-De-Echo-Normal | 87.25x | 41.3s |
-| UVR-DeReverb-aufr33-jarredou_4band_v4_ms_fullband | 86.70x | 41.5s |
-| UVR-DeEcho-DeReverb | 86.58x | 41.6s |
-| 3_HP-Vocal-UVR | 85.15x | 42.3s |
-| 4_HP-Vocal-UVR | 84.23x | 42.7s |
-| 1_HP-UVR | 84.06x | 42.8s |
-| 17_HP-Wind_Inst-UVR | 82.92x | 43.4s |
-| 6_HP-Karaoke-UVR | 81.81x | 44.0s |
-| UVR-BVE-4B_SN-44100-1 | 81.54x | 44.2s |
-| 9_HP2-UVR | 58.48x | 61.6s |
-| 8_HP2-UVR | 57.23x | 62.9s |
-| 7_HP2-UVR | 56.10x | 64.2s |
+| UVR-DeNoise-Lite | 60.39x | 59.6s |
+| Harmonic_Noise_Separation_yxlllc | 45.63x | 78.9s |
+| MGM_HIGHEND_v4 | 70.89x | 50.8s |
+| MGM_LOWEND_A_v4 | 44.81x | 80.3s |
+| MGM_MAIN_v4 | 39.34x | 91.5s |
+| 11_SP-UVR-2B-32000-2 | 40.06x | 89.9s |
+| 10_SP-UVR-2B-32000-1 | 40.21x | 89.5s |
+| 12_SP-UVR-3B-44100 | 35.40x | 101.7s |
+
+`model_vocals_mdx23c_sdr_10.17` is not present in the current catalog, so it was not measured on this branch. Some benchmark display names do not map exactly to current catalog names; those rows are marked as candidates.
