@@ -206,7 +206,9 @@ For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator
 
 - model_type: The type of model, e.g., 'htdemucs'. Must be one of 
     ['bs_roformer', 
+    'bs_conformer',
     'mel_band_roformer', 
+    'mel_band_conformer',
     'htdemucs', 
     'mdx23c', 
     'bandit', 

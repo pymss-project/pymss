@@ -64,7 +64,13 @@ PASSTHROUGH_INFERENCE_PARAMS = frozenset(
         "split",
     }
 )
-FAST_INIT_MODEL_TYPES = {"bs_roformer", "bs_roformer_hyperace", "mel_band_roformer"}
+FAST_INIT_MODEL_TYPES = {
+    "bs_roformer",
+    "bs_roformer_hyperace",
+    "bs_conformer",
+    "mel_band_roformer",
+    "mel_band_conformer",
+}
 LEGACY_DEMUCS_MODEL_TYPES = {"demucs", "tasnet", "legacy_demucs", "legacy_tasnet"}
 OUTPUT_NORMALIZE_TARGET_DBFS = -0.01
 OUTPUT_NORMALIZE_PEAK = 10 ** (OUTPUT_NORMALIZE_TARGET_DBFS / 20)
@@ -370,7 +376,14 @@ def _model_is_stereo(model_type, config):
         Any: Computed result."""
     if model_type == "vr":
         return True
-    if model_type in ["bs_roformer", "bs_roformer_hyperace", "mel_band_roformer", *LEGACY_DEMUCS_MODEL_TYPES]:
+    if model_type in [
+        "bs_roformer",
+        "bs_roformer_hyperace",
+        "bs_conformer",
+        "mel_band_roformer",
+        "mel_band_conformer",
+        *LEGACY_DEMUCS_MODEL_TYPES,
+    ]:
         return config.model.get("stereo", True)
     return True
 
@@ -621,9 +634,10 @@ class MSSeparator:
 
     Args:
         model_type (str): Model architecture/runtime type. Common values
-            include ``bs_roformer``, ``mel_band_roformer``, ``htdemucs``,
-            ``mdx23c``, ``bandit``, ``bandit_v2``, ``scnet``, ``apollo``,
-            ``vr``, ``legacy_demucs``, and ``legacy_tasnet``.
+            include ``bs_roformer``, ``bs_conformer``, ``mel_band_roformer``,
+            ``mel_band_conformer``, ``htdemucs``, ``mdx23c``, ``bandit``,
+            ``bandit_v2``, ``scnet``, ``apollo``, ``vr``, ``legacy_demucs``,
+            and ``legacy_tasnet``.
         model_path (str | os.PathLike): Path to the model weights file, such
             as a ``.ckpt``, ``.th``, ``.pth``, or VR model file.
         config_path (str | os.PathLike | None, optional): YAML config path for
@@ -1039,7 +1053,7 @@ class MSSeparator:
         state_dict = _load_state_dict(self.model_type, self.model_path, self.device)
         model_type = _runtime_model_type(self.model_type, state_dict)
         model_kwargs_override = None
-        if model_type == "mel_band_roformer":
+        if model_type in {"mel_band_roformer", "mel_band_conformer"}:
             model_kwargs_override = {
                 "mlp_hidden_layers": _infer_mel_band_roformer_mlp_hidden_layers(state_dict),
             }

@@ -202,7 +202,9 @@ separator.process_folder('path/to/input_folder')
 
 - model_type: 模型类型，例如 'htdemucs'。 必须是以下之一
     ['bs_roformer',
+    'bs_conformer',
     'mel_band_roformer',
+    'mel_band_conformer',
     'htdemucs',
     'mdx23c',
     'bandit',

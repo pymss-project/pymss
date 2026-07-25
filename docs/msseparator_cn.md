@@ -74,7 +74,7 @@ separator = MSSeparator(
 
 | 参数 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `model_type` | `str` | 必填 | 模型架构或运行类型。常见值包括 `bs_roformer`、`mel_band_roformer`、`htdemucs`、`mdx23c`、`bandit`、`bandit_v2`、`scnet`、`apollo`、`vr`、`legacy_demucs`、`legacy_tasnet`。使用 catalog 模型时通常不需要手动设置。 |
+| `model_type` | `str` | 必填 | 模型架构或运行类型。常见值包括 `bs_roformer`、`bs_conformer`、`mel_band_roformer`、`mel_band_conformer`、`htdemucs`、`mdx23c`、`bandit`、`bandit_v2`、`scnet`、`apollo`、`vr`、`legacy_demucs`、`legacy_tasnet`。使用 catalog 模型时通常不需要手动设置。 |
 | `model_path` | `str` | 必填 | 模型权重文件路径。扩展名取决于模型类型，例如 `.ckpt`、`.th`、`.pth`。 |
 | `config_path` | `str \| None` | `None` | MSS 类模型使用的 YAML 配置路径。不传时，pymss 会尝试使用 `model_path + ".yaml"`。VR 模型使用内置 VR 元数据，不使用 MSS YAML 配置。 |
 | `device` | `str` | `"auto"` | 运行设备。可选值为 `auto`、`cpu`、`cuda`、`mps`、`mlx`。`auto` 优先选择 CUDA，其次 Apple MPS，最后 CPU。`mlx` 是 Apple Silicon MLX 后端的公开快捷写法，内部会通过 `device="mps"` 和 MLX 模型参数运行。 |

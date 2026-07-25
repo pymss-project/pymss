@@ -26,7 +26,7 @@ def get_model_from_config(model_type, config_path, model_kwargs_override=None):
 
     Returns:
         Any: Computed result."""
-    if model_type == "mel_band_roformer":
+    if model_type in {"mel_band_roformer", "mel_band_conformer"}:
         model_kwargs_override = dict(model_kwargs_override or {})
         model_kwargs_override.setdefault("zero_dc", False)
         return _core_get_model_from_config(
