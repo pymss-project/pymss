@@ -152,8 +152,8 @@ def _normalize_model_name(name):
     return str(name).strip().lower()
 
 
-def list_models(category=None, supported=None):
-    """List model catalog entries.
+def list_models(category=None, supported=None, include_user=False):
+    """List model catalog entries, optionally including user-registered models.
 
     The catalog contains every model known to pymss, including unsupported
     entries. Use the filters when building model selectors, download tools, or
@@ -168,9 +168,11 @@ def list_models(category=None, supported=None):
             returns only models supported by the current inference code,
             ``False`` returns unsupported entries, and ``None`` returns all
             catalog entries. Defaults to None.
+        include_user (bool, optional): When True, append locally registered
+            user models after catalog entries. Defaults to False.
 
     Returns:
-        list[ModelEntry]: Matching catalog entries in catalog order.
+        list[ModelEntry | UserModelEntry]: Matching entries.
 
     Example:
         >>> from pymss import list_models
@@ -180,7 +182,11 @@ def list_models(category=None, supported=None):
     Example:
         >>> vocal_models = list_models(category="vocal", supported=True)
         >>> [model.stem for model in vocal_models[:3]]"""
-    models = load_model_catalog()["models"]
+    from .user_models import list_user_models
+
+    models = list(load_model_catalog()["models"])
+    if include_user:
+        models.extend(list_user_models())
     if category:
         category = category.lower()
         models = [
@@ -195,16 +201,23 @@ def list_models(category=None, supported=None):
     return models
 
 
+def _catalog_has_name(model_name):
+    return _normalize_model_name(model_name) in _model_index()
+
+
 def get_model_entry(model_name):
-    """Return catalog metadata for one model name or alias.
+    """Return catalog or user-model metadata for one model name or alias.
+
+    User-registered models are checked first, then the built-in catalog.
+    Matching is case-insensitive after stripping surrounding whitespace.
 
     Args:
-        model_name (str): Full catalog filename, stem name, or alias. Matching
-            is case-insensitive after stripping surrounding whitespace.
+        model_name (str): Full catalog filename, stem name, alias, or
+            user-registered model name.
 
     Returns:
-        ModelEntry: Catalog entry containing architecture, support status,
-        relative file paths, hashes, categories, target stem, and aliases.
+        ModelEntry | UserModelEntry: Entry containing architecture, support
+        status, paths, and related metadata.
 
     Raises:
         KeyError: If ``model_name`` is unknown.
@@ -218,6 +231,12 @@ def get_model_entry(model_name):
     Example:
         >>> entry.supported, entry.category_path
         (True, entry.category_path)"""
+    from .user_models import get_user_model_entry
+
+    try:
+        return get_user_model_entry(model_name)
+    except KeyError:
+        pass
     try:
         return _model_index()[_normalize_model_name(model_name)]
     except KeyError as exc:
@@ -273,26 +292,29 @@ def auxiliary_paths_for(entry, model_dir=None):
 
 
 def resolve_model(model_name, model_dir=None, require_supported=True, require_exists=True):
-    """Resolve a catalog model to local file paths.
+    """Resolve a catalog or user-registered model to local file paths.
 
-    This function does not instantiate a model. It only translates a catalog
-    name or alias into the local weights/config paths that ``MSSeparator`` will
-    use.
+    This function does not instantiate a model. It only translates a model name
+    or alias into the local weights/config paths that ``MSSeparator`` will use.
+    User-registered models are preferred over built-in catalog names.
 
     Args:
-        model_name (str): Model name, stem, or alias from the pymss catalog.
+        model_name (str): Model name, stem, or alias from the pymss catalog or
+            the local user model registry.
         model_dir (str | os.PathLike | None, optional): Local model cache
-            directory. When omitted, pymss uses ``PYMSS_MODEL_DIR`` if set, a
-            repository-local ``all_models`` directory if present, or the user
-            cache under ``~/.cache/pymss/models``. Defaults to None.
+            directory for catalog models. When omitted, pymss uses
+            ``PYMSS_MODEL_DIR`` if set, a repository-local ``all_models``
+            directory if present, or the user cache under
+            ``~/.cache/pymss/models``. Ignored for user-registered models that
+            already store absolute paths. Defaults to None.
         require_supported (bool, optional): Whether unsupported catalog entries
             should raise ``ValueError``. Defaults to True.
         require_exists (bool, optional): Whether resolved model, config, and
             auxiliary files must already exist locally. Defaults to True.
 
     Returns:
-        dict: Dictionary with ``entry`` (``ModelEntry``), ``model_type``,
-        ``model_path``, and ``config_path`` keys.
+        dict: Dictionary with ``entry``, ``model_type``, ``model_path``,
+        ``config_path``, and ``source`` (``\"user\"`` or ``\"catalog\"``).
 
     Raises:
         KeyError: If the model name is unknown.
@@ -311,7 +333,16 @@ def resolve_model(model_name, model_dir=None, require_supported=True, require_ex
         >>> resolved = resolve_model("bs_roformer_voc_hyperacev2", model_dir="models")
         >>> resolved["model_path"].endswith(".ckpt") or resolved["model_path"].endswith(".pth")
         True"""
-    entry = get_model_entry(model_name)
+    from .user_models import resolve_user_model
+
+    try:
+        return resolve_user_model(model_name, require_exists=require_exists)
+    except KeyError:
+        pass
+
+    entry = _model_index()[_normalize_model_name(model_name)] if _catalog_has_name(model_name) else None
+    if entry is None:
+        raise KeyError(f"Unknown pymss model: {model_name}")
     if require_supported and not entry.supported:
         reason = entry.unsupported_reason or "unsupported"
         raise ValueError(f"Model {entry.name} cannot be used for inference yet: {reason}")
@@ -334,11 +365,79 @@ def resolve_model(model_name, model_dir=None, require_supported=True, require_ex
         "model_type": entry.model_type,
         "model_path": str(model_path),
         "config_path": str(config_path) if config_path else None,
+        "source": "catalog",
+        "inference_params": {},
     }
 
 
+def register_model(
+    name,
+    model_type,
+    model_path,
+    config_path=None,
+    aliases=None,
+    force=False,
+    require_exists=True,
+    overlap_size=None,
+    inference_params=None,
+):
+    """Register a local custom model for later use by name.
+
+    After registration, the name works with ``resolve_model``,
+    ``create_separator``, ``MSSeparator.from_model_name``, and ``pymss infer``.
+
+    Args:
+        name (str): Name to register.
+        model_type (str): Architecture/runtime type.
+        model_path (str | os.PathLike): Path to model weights.
+        config_path (str | os.PathLike | None, optional): Path to YAML config.
+            Required for most model types. Defaults to None.
+        aliases (Sequence[str] | None, optional): Optional alternate names.
+            Defaults to None.
+        force (bool, optional): Replace an existing user registration.
+            Defaults to False.
+        require_exists (bool, optional): Require files to exist now.
+            Defaults to True.
+        overlap_size (int | None, optional): Default ``overlap_size`` stored with
+            the registration. Defaults to None.
+        inference_params (dict | None, optional): Default inference overrides
+            stored with the registration. Defaults to None.
+
+    Returns:
+        UserModelEntry: Registered entry.
+    """
+    from .user_models import register_user_model
+
+    return register_user_model(
+        name,
+        model_type,
+        model_path,
+        config_path=config_path,
+        aliases=aliases,
+        force=force,
+        require_exists=require_exists,
+        overlap_size=overlap_size,
+        inference_params=inference_params,
+        catalog_name_checker=_catalog_has_name,
+    )
+
+
+def unregister_model(name):
+    """Remove a previously registered user model."""
+    from .user_models import unregister_user_model
+
+    return unregister_user_model(name)
+
+
+def _merge_resolved_inference_params(resolved, inference_params=None):
+    merged = dict(resolved.get("inference_params") or {})
+    if inference_params:
+        merged.update(inference_params)
+    return merged
+
+
 def create_separator(model_name, model_dir=None, **separator_kwargs):
-    """Create ``MSSeparator`` from a catalog model name.
+    """Create ``MSSeparator`` from a catalog or user-registered model name.
 
     This is a convenience wrapper around ``resolve_model(...)`` followed by
     ``MSSeparator(...)``. It expects the model files to already exist locally;
@@ -353,6 +452,8 @@ def create_separator(model_name, model_dir=None, **separator_kwargs):
             such as ``device``, ``device_ids``, ``output_format``,
             ``store_dirs``, ``save_as_folder``, ``audio_params``, ``logger``,
             ``debug``, ``progress_callback``, and ``inference_params``.
+            For user models, registered default ``inference_params`` are applied
+            first; values passed here override them.
 
     Returns:
         MSSeparator: Loaded separator instance ready for inference.
@@ -378,6 +479,11 @@ def create_separator(model_name, model_dir=None, **separator_kwargs):
     from .separator import MSSeparator
 
     resolved = resolve_model(model_name, model_dir=model_dir, require_supported=True, require_exists=True)
+    separator_kwargs = dict(separator_kwargs)
+    separator_kwargs["inference_params"] = _merge_resolved_inference_params(
+        resolved,
+        separator_kwargs.pop("inference_params", None),
+    )
     return MSSeparator(
         model_type=resolved["model_type"],
         model_path=resolved["model_path"],

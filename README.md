@@ -163,6 +163,30 @@ with MSSeparator.from_model_name(
     separator.process_folder("path/to/input_file_or_folder")
 ```
 
+### Register custom models
+
+Register local weights + config once, then reuse the name like a catalog model (`~/.cache/pymss/user_models.json`, override with `PYMSS_USER_MODELS`):
+
+```sh
+pymss register my_bs --type bs_conformer --model /path/model.ckpt --config /path/config.yaml --overlap-size 44100
+pymss infer my_bs -i song.wav -o results
+pymss list --user-only
+pymss unregister my_bs
+```
+
+```python
+from pymss import register_model, MSSeparator
+
+register_model(
+    "my_bs",
+    "bs_conformer",
+    "/path/model.ckpt",
+    "/path/config.yaml",
+    overlap_size=44100,
+)
+separator = MSSeparator.from_model_name("my_bs")
+```
+
 ### Manual model paths
 
 Use the full constructor for custom weights that are not in the model catalog.
@@ -285,7 +309,13 @@ separator.process_folder("path/to/input_folder")
 
 ### Hugging Face Configs
 
-Some model configs downloaded from Hugging Face or MSST-WebUI use `inference.num_overlap`. This optimized pymss path uses `inference.overlap_size` instead. If the config only has `num_overlap`, add an explicit `overlap_size` or pass it through `inference_params`; otherwise pymss falls back to 50% overlap and inference will be much slower.
+Some model configs downloaded from Hugging Face or MSST-WebUI use `inference.num_overlap`. This optimized pymss path uses `inference.overlap_size` instead. When a config only has `num_overlap`, pymss now converts it automatically:
+
+```text
+overlap_size = chunk_size - chunk_size // num_overlap
+```
+
+For `num_overlap: 2` that is 50% overlap (correct MSST match, but slower). Prefer an explicit smaller `overlap_size` for speed, or pass it through `inference_params`.
 
 Recommended fast setting:
 

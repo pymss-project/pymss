@@ -22,7 +22,22 @@ separator = MSSeparator.from_model_name(
 separator.process_folder("path/to/input_file_or_folder")
 ```
 
-`from_model_name()` 会根据 pymss 的模型 catalog 解析 `model_type`、权重路径和配置路径，然后把剩余参数继续传给 `MSSeparator(...)`。
+`from_model_name()` 会根据 pymss 的模型 catalog 或本地注册的用户模型解析 `model_type`、权重路径和配置路径，然后把剩余参数继续传给 `MSSeparator(...)`。
+
+注册自定义本地模型后，可按名字复用：
+
+```python
+from pymss import register_model, MSSeparator
+
+register_model(
+    "my_bs",
+    "bs_conformer",
+    "/path/model.ckpt",
+    "/path/config.yaml",
+    overlap_size=44100,
+)
+separator = MSSeparator.from_model_name("my_bs")
+```
 
 ## `from_model_name()` 参数
 

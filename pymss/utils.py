@@ -12,6 +12,74 @@ from .config import load_config
 from .progress import _ProgressContext
 
 
+def apply_msst_inference_compat(config, logger=None, *, user_set_chunk_size=False):
+    """Normalize MSST-style ``num_overlap`` / ``inference.chunk_size`` for pymss.
+
+    MSST configs often set ``inference.num_overlap`` and optionally
+    ``inference.chunk_size``. pymss demix uses ``audio.chunk_size`` and
+    ``inference.overlap_size``, where::
+
+        step = chunk_size - overlap_size
+        # MSST equivalent: step = chunk_size // num_overlap
+
+    so ``overlap_size = chunk_size - chunk_size // num_overlap``.
+
+    Args:
+        config: Loaded model configuration.
+        logger: Optional logger for a one-time conversion warning.
+        user_set_chunk_size: When True, keep ``audio.chunk_size`` from an
+            explicit ``inference_params`` override instead of copying
+            ``inference.chunk_size``.
+
+    Returns:
+        The same config object after in-place normalization.
+    """
+    inference = getattr(config, "inference", None)
+    audio = getattr(config, "audio", None)
+    if inference is None or audio is None:
+        return config
+
+    if not user_set_chunk_size and inference.get("chunk_size") is not None:
+        audio["chunk_size"] = int(inference["chunk_size"])
+
+    if audio.get("chunk_size") is None:
+        return config
+
+    chunk_size = int(audio["chunk_size"])
+    inference["chunk_size"] = chunk_size
+
+    if inference.get("overlap_size") is not None:
+        return config
+
+    num_overlap = inference.get("num_overlap")
+    if num_overlap is None:
+        return config
+
+    num_overlap = int(num_overlap)
+    if num_overlap < 1:
+        raise ValueError(f"inference.num_overlap must be >= 1, got {num_overlap}")
+
+    overlap_size = chunk_size - (chunk_size // num_overlap)
+    if overlap_size < 0 or overlap_size >= chunk_size:
+        raise ValueError(
+            f"converted overlap_size={overlap_size} from num_overlap={num_overlap} "
+            f"is invalid for chunk_size={chunk_size}"
+        )
+    inference["overlap_size"] = overlap_size
+
+    suggested = max(1, chunk_size // 20)
+    message = (
+        f"Config has inference.num_overlap={num_overlap} but no overlap_size; "
+        f"set overlap_size={overlap_size} to match MSST "
+        f"(step=chunk_size/{num_overlap}={chunk_size // num_overlap}). "
+        f"For faster inference, pass a smaller overlap_size "
+        f"(e.g. ~5% of chunk_size ≈ {suggested})."
+    )
+    if logger is not None:
+        logger.warning(message)
+    return config
+
+
 def _model_target(model):
     return model.module if isinstance(model, nn.DataParallel) else model
 
@@ -124,6 +192,7 @@ def _get_inference_step(config, chunk_size):
 
     Returns:
         Any: Computed result."""
+    apply_msst_inference_compat(config)
     overlap_size = int(config.inference.get("overlap_size", chunk_size // 2))
     if overlap_size < 0 or overlap_size >= chunk_size:
         raise ValueError("inference.overlap_size must be >= 0 and < audio.chunk_size")

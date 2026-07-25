@@ -22,7 +22,22 @@ separator = MSSeparator.from_model_name(
 separator.process_folder("path/to/input_file_or_folder")
 ```
 
-`from_model_name()` resolves the model type, weight path, and config path from the pymss model catalog, then forwards the remaining keyword arguments to `MSSeparator(...)`.
+`from_model_name()` resolves the model type, weight path, and config path from the pymss model catalog or a locally registered user model, then forwards the remaining keyword arguments to `MSSeparator(...)`.
+
+To register a custom local model for reuse by name:
+
+```python
+from pymss import register_model, MSSeparator
+
+register_model(
+    "my_bs",
+    "bs_conformer",
+    "/path/model.ckpt",
+    "/path/config.yaml",
+    overlap_size=44100,
+)
+separator = MSSeparator.from_model_name("my_bs")
+```
 
 ## `from_model_name()` Parameters
 
