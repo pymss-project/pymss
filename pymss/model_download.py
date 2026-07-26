@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -26,6 +27,27 @@ MS_BASE_URL = f"https://www.modelscope.cn/models/{MS_REPO}/resolve/master"
 MS_FILES_API = f"https://www.modelscope.cn/api/v1/models/{MS_REPO}/repo/files?Revision=master&Recursive=true"
 MODEL_FILE_SUFFIXES = {".ckpt", ".th", ".pth", ".chpt", ".safetensors", ".pt", ".yaml", ".yml", ".json"}
 ARIA2C_PATH = shutil.which("aria2c")
+ARIA2_PROGRESS_PATTERN = re.compile(
+    r"\[#\S+\s+(?P<downloaded>[\d.]+\s*[KMGTPE]?i?B)/"
+    r"(?P<total>[\d.]+\s*[KMGTPE]?i?B)"
+    r"\((?P<percent>\d+)%\).*?DL:(?P<speed>[\d.]+\s*[KMGTPE]?i?B)",
+    re.IGNORECASE,
+)
+BYTE_UNITS = {
+    "B": 1,
+    "KIB": 1024,
+    "MIB": 1024**2,
+    "GIB": 1024**3,
+    "TIB": 1024**4,
+    "PIB": 1024**5,
+    "EIB": 1024**6,
+    "KB": 1000,
+    "MB": 1000**2,
+    "GB": 1000**3,
+    "TB": 1000**4,
+    "PB": 1000**5,
+    "EB": 1000**6,
+}
 
 
 class DownloadError(RuntimeError):
@@ -186,7 +208,62 @@ def _validate_downloaded_file(path, dest, expected_size=None, expected_sha256=""
             raise DownloadValidationError(f"sha256 mismatch for {dest.name}: expected {expected_sha256}, got {actual}")
 
 
-def _download_file_urllib(url, tmp, dest, expected_size=None, expected_sha256="", timeout=30):
+def _parse_human_bytes(value):
+    """Convert aria2 byte strings such as 120MiB or 1.5GB to bytes."""
+    match = re.fullmatch(r"\s*([\d.]+)\s*([KMGTPE]?i?B)\s*", str(value or ""), re.IGNORECASE)
+    if not match:
+        return 0
+    try:
+        amount = float(match.group(1))
+    except ValueError:
+        return 0
+    return int(amount * BYTE_UNITS.get(match.group(2).upper(), 1))
+
+
+def _emit_download_progress(progress_callback, done, total, message):
+    """Report progress to the caller, without letting it break the download.
+
+    This runs inside the retry loop in ``_download_file``, which treats OSError as a failed
+    transfer. A callback that raises one while writing a log or a closed pipe would be
+    indistinguishable from a dead connection, and the whole file would be fetched again.
+
+    Args:
+        progress_callback (callable | None): Caller's progress callback.
+        done (int): Bytes transferred so far.
+        total (int): Expected total bytes, or 0 when unknown.
+        message (str): Human readable description of the current step.
+
+    Returns:
+        None: This callable completes for its side effects."""
+    if not progress_callback:
+        return
+    try:
+        progress_callback(int(done), int(total or 0), message)
+    except Exception:
+        pass
+
+
+def _parse_aria2_progress(line):
+    """Parse one aria2 progress summary line.
+
+    Args:
+        line (str): A single line of aria2c console output.
+
+    Returns:
+        tuple[int, int, str] | None: Downloaded bytes, total bytes, and the
+        transfer rate as aria2 rendered it, or None when the line carries no
+        usable progress."""
+    match = ARIA2_PROGRESS_PATTERN.search(line or "")
+    if not match:
+        return None
+    total = _parse_human_bytes(match.group("total"))
+    done = _parse_human_bytes(match.group("downloaded"))
+    if not total:
+        return None
+    return min(done, total), total, match.group("speed").strip()
+
+
+def _download_file_urllib(url, tmp, dest, expected_size=None, expected_sha256="", timeout=30, progress_callback=None):
     """Download file urllib.
 
     Args:
@@ -201,19 +278,25 @@ def _download_file_urllib(url, tmp, dest, expected_size=None, expected_sha256=""
         Any: Computed result."""
     with urllib.request.urlopen(url, timeout=timeout) as response:
         total = int(response.headers.get("content-length") or expected_size or 0)
+        done = 0
+        _emit_download_progress(progress_callback, done, total, f"Downloading {dest.name}")
         with open(tmp, "wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc=dest.name) as progress:
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
                 f.write(chunk)
+                done += len(chunk)
                 progress.update(len(chunk))
+                _emit_download_progress(progress_callback, done, total, f"Downloading {dest.name}")
     _validate_downloaded_file(tmp, dest, expected_size, expected_sha256)
     os.replace(tmp, dest)
+    downloaded_size = dest.stat().st_size
+    _emit_download_progress(progress_callback, downloaded_size, expected_size or downloaded_size, f"Downloaded {dest.name}")
     return dest
 
 
-def _download_file_aria2(url, tmp, dest, expected_size=None, expected_sha256="", timeout=30):
+def _download_file_aria2(url, tmp, dest, expected_size=None, expected_sha256="", timeout=30, progress_callback=None):
     """Download file aria2.
 
     Args:
@@ -245,18 +328,59 @@ def _download_file_aria2(url, tmp, dest, expected_size=None, expected_sha256="",
         tmp.name,
         url,
     ]
-    result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
-        raise DownloadError(f"aria2c failed with exit code {result.returncode}")
+    _emit_download_progress(progress_callback, 0, expected_size or 0, f"Downloading {dest.name}")
+    output_tail = []
+    # aria2 writes its progress summary to stdout. Left alone it would land on the caller's
+    # stdout, which a library has no business writing to; capturing it also turns the summary
+    # into the progress numbers reported below. tqdm renders to stderr, matching the urllib
+    # branch so command line users still see a bar either way.
+    with subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ) as process, tqdm(total=expected_size or 0, unit="B", unit_scale=True, desc=dest.name) as bar:
+        try:
+            if process.stdout is not None:
+                for line in process.stdout:
+                    text = line.strip()
+                    if text:
+                        output_tail.append(text)
+                        del output_tail[:-20]
+                    parsed = _parse_aria2_progress(line)
+                    if parsed is None:
+                        continue
+                    done, total, speed = parsed
+                    if total and bar.total != total:
+                        bar.total = total
+                    bar.update(max(0, done - bar.n))
+                    _emit_download_progress(progress_callback, done, total, f"Downloading {dest.name} ({speed}/s)")
+            returncode = process.wait()
+        except BaseException:
+            # subprocess.run killed the child on any exception; Popen's context manager does
+            # not, and aria2 does not stop when its stdout closes. Without this it survives a
+            # Ctrl+C as an orphan still writing to the file, and any other error would leave
+            # __exit__ blocked in wait() until the whole download finished.
+            process.kill()
+            raise
+    if returncode != 0:
+        detail = "\n".join(output_tail[-5:])
+        if detail:
+            detail = f": {detail}"
+        raise DownloadError(f"aria2c failed with exit code {returncode}{detail}")
     if not tmp.is_file():
         raise DownloadError("aria2c did not create the expected output file")
 
     _validate_downloaded_file(tmp, dest, expected_size, expected_sha256)
     os.replace(tmp, dest)
+    downloaded_size = dest.stat().st_size
+    _emit_download_progress(progress_callback, downloaded_size, expected_size or downloaded_size, f"Downloaded {dest.name}")
     return dest
 
 
-def _download_file(url, dest, expected_size=None, expected_sha256="", timeout=30, retries=2):
+def _download_file(url, dest, expected_size=None, expected_sha256="", timeout=30, retries=2, progress_callback=None):
     """Download file.
 
     Args:
@@ -277,8 +401,12 @@ def _download_file(url, dest, expected_size=None, expected_sha256="", timeout=30
     for attempt in range(retries + 1):
         try:
             if ARIA2C_PATH:
-                return _download_file_aria2(url, tmp, dest, expected_size, expected_sha256, timeout=timeout)
-            return _download_file_urllib(url, tmp, dest, expected_size, expected_sha256, timeout=timeout)
+                return _download_file_aria2(
+                    url, tmp, dest, expected_size, expected_sha256, timeout=timeout, progress_callback=progress_callback
+                )
+            return _download_file_urllib(
+                url, tmp, dest, expected_size, expected_sha256, timeout=timeout, progress_callback=progress_callback
+            )
         except (OSError, urllib.error.URLError, urllib.error.HTTPError, DownloadError) as exc:
             last_error = exc
             # don't rm temp file if aria2c is being used
@@ -318,7 +446,7 @@ def files_for_model(model_name, model_dir=None):
     return entry, files
 
 
-def download_model(model_name, model_dir=None, source="modelscope", endpoint=None, verify=True, force=False, timeout=30):
+def download_model(model_name, model_dir=None, source="modelscope", endpoint=None, verify=True, force=False, timeout=30, progress_callback=None):
     """Download all files required by one catalog model.
 
     The downloader resolves the model from the pymss catalog, downloads the
@@ -344,6 +472,10 @@ def download_model(model_name, model_dir=None, source="modelscope", endpoint=Non
         force (bool, optional): Whether to redownload files even when existing
             local files appear valid. Defaults to False.
         timeout (int, optional): Network timeout in seconds. Defaults to 30.
+        progress_callback (callable | None, optional): Optional callback called
+            as ``callback(done, total, message)`` during each file download.
+            Exceptions it raises are ignored so that reporting cannot fail the
+            download. Defaults to None.
 
     Returns:
         dict: Download result with ``entry`` (``ModelEntry``), ``downloaded``
@@ -378,13 +510,13 @@ def download_model(model_name, model_dir=None, source="modelscope", endpoint=Non
             skipped.append(str(dest))
             continue
         url = remote_url(relpath, source=source, endpoint=endpoint)
-        _download_file(url, dest, expected_size, expected_sha256, timeout=timeout)
+        _download_file(url, dest, expected_size, expected_sha256, timeout=timeout, progress_callback=progress_callback)
         downloaded.append(str(dest))
 
     return {"entry": entry, "downloaded": downloaded, "skipped": skipped}
 
 
-def download_all(model_dir=None, source="modelscope", endpoint=None, supported_only=False, force=False, timeout=30):
+def download_all(model_dir=None, source="modelscope", endpoint=None, supported_only=False, force=False, timeout=30, progress_callback=None):
     """Download every catalog model, optionally limited to supported entries.
 
     Args:
@@ -394,6 +526,7 @@ def download_all(model_dir=None, source="modelscope", endpoint=None, supported_o
         supported_only (bool, optional): Supported only value. Defaults to False.
         force (bool, optional): Whether to overwrite or redownload existing files. Defaults to False.
         timeout (int, optional): Network timeout in seconds. Defaults to 30.
+        progress_callback (callable | None, optional): Optional download progress callback. Defaults to None.
 
     Returns:
         list[dict]: Per-model download results."""
@@ -403,7 +536,15 @@ def download_all(model_dir=None, source="modelscope", endpoint=None, supported_o
     for entry in list_models(supported=True if supported_only else None):
         try:
             results.append(
-                download_model(entry.name, model_dir=model_dir, source=source, endpoint=endpoint, force=force, timeout=timeout)
+                download_model(
+                    entry.name,
+                    model_dir=model_dir,
+                    source=source,
+                    endpoint=endpoint,
+                    force=force,
+                    timeout=timeout,
+                    progress_callback=progress_callback,
+                )
             )
         except Exception as exc:
             results.append({"entry": entry, "error": str(exc)})
