@@ -6,8 +6,9 @@ import warnings
 from .ensemble import ENSEMBLE_ALGORITHMS, save_ensemble_audio
 from .logger import get_separation_logger
 from .model_download import download_all, download_model
-from .model_registry import create_separator, list_models, resolve_model
+from .model_registry import create_separator, list_models, register_model, resolve_model, unregister_model
 from .progress import _CliInferenceProgress
+from .user_models import KNOWN_MODEL_TYPES, list_user_models
 from .workflow import load_workflow_file, run_workflow_file, validate_workflow, write_workflow_template
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -48,14 +49,33 @@ def cmd_list(args):
 
     Returns:
         Any: Computed result."""
-    rows = list_models(category=args.category, supported=None if args.all else True)
+    if getattr(args, "user_only", False):
+        rows = list_user_models()
+        if args.category:
+            category = args.category.lower()
+            rows = [
+                item
+                for item in rows
+                if item.primary_category.lower() == category
+                or item.secondary_category.lower() == category
+                or item.category_path.lower() == category
+            ]
+        if not args.all:
+            rows = [item for item in rows if item.supported]
+    else:
+        rows = list_models(
+            category=args.category,
+            supported=None if args.all else True,
+            include_user=True,
+        )
     if args.json:
         print(json.dumps([item.__dict__ for item in rows], ensure_ascii=False, indent=2))
         return 0
     for item in rows:
         status = "ok" if item.supported else item.unsupported_reason
         category = item.category_path or item.primary_category
-        print(f"{item.name}\t{item.model_type or item.architecture}\t{category}\t{item.target_stem}\t{status}")
+        source = getattr(item, "source", "catalog")
+        print(f"{item.name}\t{item.model_type or item.architecture}\t{category}\t{item.target_stem}\t{status}\t{source}")
     return 0
 
 
@@ -71,6 +91,7 @@ def cmd_info(args):
     entry = resolved["entry"]
     data = {
         "name": entry.name,
+        "source": resolved.get("source", getattr(entry, "source", "catalog")),
         "model_type": entry.model_type,
         "architecture": entry.architecture,
         "supported": entry.supported,
@@ -81,8 +102,39 @@ def cmd_info(args):
         "model_path": resolved["model_path"],
         "config_path": resolved["config_path"],
         "size_bytes": entry.size_bytes,
+        "aliases": list(getattr(entry, "aliases", ()) or ()),
+        "inference_params": dict(resolved.get("inference_params") or getattr(entry, "inference_params", {}) or {}),
     }
     print(json.dumps(data, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_register(args):
+    """Register a local custom model under a reusable name."""
+    inference_params = _parse_key_value(getattr(args, "param", None))
+    entry = register_model(
+        args.name,
+        args.type,
+        args.model,
+        config_path=args.config,
+        aliases=args.alias or None,
+        force=args.force,
+        require_exists=not args.allow_missing,
+        overlap_size=args.overlap_size,
+        inference_params=inference_params or None,
+    )
+    print(f"registered {entry.name} ({entry.model_type})")
+    print(f"  model:  {entry.model_path}")
+    print(f"  config: {entry.config_path or '(none)'}")
+    if entry.inference_params:
+        print(f"  inference_params: {entry.inference_params}")
+    return 0
+
+
+def cmd_unregister(args):
+    """Remove a previously registered user model."""
+    entry = unregister_model(args.name)
+    print(f"unregistered {entry.name}")
     return 0
 
 
@@ -141,6 +193,10 @@ def _ensure_model_files(args):
 
     Returns:
         None: This callable completes for its side effects."""
+    preview = resolve_model(args.model, model_dir=args.model_dir, require_supported=True, require_exists=False)
+    if preview.get("source") == "user":
+        resolve_model(args.model, model_dir=args.model_dir, require_supported=True, require_exists=True)
+        return
     try:
         resolve_model(args.model, model_dir=args.model_dir, require_supported=True, require_exists=True)
     except FileNotFoundError:
@@ -328,6 +384,7 @@ def build_parser():
     )
     list_parser.add_argument("--category", help="Filter by primary or secondary category.")
     list_parser.add_argument("--all", action="store_true", help="Include models that are not supported for inference yet.")
+    list_parser.add_argument("--user-only", action="store_true", help="List only locally registered user models.")
     list_parser.add_argument("--json", action="store_true")
     list_parser.set_defaults(func=cmd_list)
 
@@ -345,6 +402,51 @@ def build_parser():
         help="Local model cache directory. Defaults to PYMSS_MODEL_DIR, repository all_models if present, or ~/.cache/pymss/models.",
     )
     info_parser.set_defaults(func=cmd_info)
+
+    # ==========================
+    # Register / unregister user models
+    # ==========================
+    register_parser = subparsers.add_parser(
+        "register",
+        help="Register a local model path+config under a reusable name.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    register_parser.add_argument("name", help="Name to use later with infer / from_model_name.")
+    register_parser.add_argument(
+        "--type",
+        required=True,
+        choices=sorted(KNOWN_MODEL_TYPES),
+        help="Architecture / runtime model type.",
+    )
+    register_parser.add_argument("--model", required=True, help="Path to model weights.")
+    register_parser.add_argument("--config", help="Path to YAML config (required for most model types).")
+    register_parser.add_argument(
+        "--overlap-size",
+        type=int,
+        help="Default inference overlap_size stored with this model (samples).",
+    )
+    register_parser.add_argument(
+        "--param",
+        action="append",
+        default=[],
+        help="Default inference override as key=value, for example --param batch_size=4.",
+    )
+    register_parser.add_argument("--alias", action="append", default=[], help="Optional alias. Can be repeated.")
+    register_parser.add_argument("--force", action="store_true", help="Replace an existing user registration.")
+    register_parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Allow registering paths that do not exist yet.",
+    )
+    register_parser.set_defaults(func=cmd_register)
+
+    unregister_parser = subparsers.add_parser(
+        "unregister",
+        help="Remove a previously registered user model.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    unregister_parser.add_argument("name", help="Registered name or alias to remove.")
+    unregister_parser.set_defaults(func=cmd_unregister)
 
     # ==========================
     # Download models

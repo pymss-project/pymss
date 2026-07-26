@@ -12,7 +12,10 @@ Exports:
     create_separator: Create ``MSSeparator`` from a catalog model name.
     get_model_entry: Resolve catalog metadata for one model name or alias.
     list_models: List model catalog entries.
-    resolve_model: Resolve catalog model paths without constructing a
+    list_user_models: List locally registered custom models.
+    register_model: Register a local model path/config under a reusable name.
+    unregister_model: Remove a previously registered custom model.
+    resolve_model: Resolve catalog or user model paths without constructing a
         separator.
     download_model: Download all files required by one catalog model.
     ensemble_audios: Load and combine multiple audio files.
@@ -43,8 +46,9 @@ Example:
 
 from .separator import MSSeparator
 from .logger import get_separation_logger
-from .model_registry import create_separator, get_model_entry, list_models, resolve_model
+from .model_registry import create_separator, get_model_entry, list_models, register_model, resolve_model, unregister_model
 from .model_download import download_model
+from .user_models import list_user_models
 from .ensemble import ensemble_audios, save_ensemble_audio
 from .audio_io import load_audio, save_audio
 from .workflow import WorkflowRunner, load_workflow_file, run_workflow_file, validate_workflow
@@ -55,6 +59,9 @@ __all__ = (
     "create_separator",
     "get_model_entry",
     "list_models",
+    "list_user_models",
+    "register_model",
+    "unregister_model",
     "resolve_model",
     "download_model",
     "ensemble_audios",

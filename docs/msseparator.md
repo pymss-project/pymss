@@ -22,7 +22,22 @@ separator = MSSeparator.from_model_name(
 separator.process_folder("path/to/input_file_or_folder")
 ```
 
-`from_model_name()` resolves the model type, weight path, and config path from the pymss model catalog, then forwards the remaining keyword arguments to `MSSeparator(...)`.
+`from_model_name()` resolves the model type, weight path, and config path from the pymss model catalog or a locally registered user model, then forwards the remaining keyword arguments to `MSSeparator(...)`.
+
+To register a custom local model for reuse by name:
+
+```python
+from pymss import register_model, MSSeparator
+
+register_model(
+    "my_bs",
+    "bs_conformer",
+    "/path/model.ckpt",
+    "/path/config.yaml",
+    overlap_size=44100,
+)
+separator = MSSeparator.from_model_name("my_bs")
+```
 
 ## `from_model_name()` Parameters
 
@@ -74,7 +89,7 @@ separator = MSSeparator(
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `model_type` | `str` | required | Model architecture/runtime type. Common values include `bs_roformer`, `mel_band_roformer`, `htdemucs`, `mdx23c`, `bandit`, `bandit_v2`, `scnet`, `apollo`, `vr`, `legacy_demucs`, and `legacy_tasnet`. Catalog users normally do not set this manually. |
+| `model_type` | `str` | required | Model architecture/runtime type. Common values include `bs_roformer`, `bs_conformer`, `mel_band_roformer`, `mel_band_conformer`, `htdemucs`, `mdx23c`, `bandit`, `bandit_v2`, `scnet`, `apollo`, `vr`, `legacy_demucs`, and `legacy_tasnet`. Catalog users normally do not set this manually. |
 | `model_path` | `str` | required | Path to the model weights file. The extension depends on the model family, for example `.ckpt`, `.th`, or `.pth`. |
 | `config_path` | `str \| None` | `None` | YAML config path for MSS-style models. If omitted, pymss tries `model_path + ".yaml"`. VR models are loaded from built-in VR metadata and do not use an MSS YAML config. |
 | `device` | `str` | `"auto"` | Runtime device. Valid values are `auto`, `cpu`, `cuda`, `mps`, and `mlx`. `auto` chooses CUDA first, then Apple MPS, then CPU. `mlx` is a public shortcut for the Apple Silicon MLX backend and internally runs through `device="mps"` with MLX model settings. |

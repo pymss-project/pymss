@@ -298,7 +298,18 @@ def files_for_model(model_name, model_dir=None):
 
     Returns:
         tuple[ModelEntry, list[tuple[str, Path]]]: Catalog entry and required files."""
+    from .user_models import get_user_model_entry
+
+    try:
+        get_user_model_entry(model_name)
+    except KeyError:
+        pass
+    else:
+        raise ValueError(f"User-registered model {model_name!r} is local-only and cannot be downloaded")
+
     entry = get_model_entry(model_name)
+    if getattr(entry, "source", None) == "user":
+        raise ValueError(f"User-registered model {model_name!r} is local-only and cannot be downloaded")
     files = [(entry.relpath, model_path_for(entry, model_dir))]
     config_path = config_path_for(entry, model_dir)
     if entry.config_relpath and config_path is not None:

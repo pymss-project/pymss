@@ -64,7 +64,13 @@ PASSTHROUGH_INFERENCE_PARAMS = frozenset(
         "split",
     }
 )
-FAST_INIT_MODEL_TYPES = {"bs_roformer", "bs_roformer_hyperace", "mel_band_roformer"}
+FAST_INIT_MODEL_TYPES = {
+    "bs_roformer",
+    "bs_roformer_hyperace",
+    "bs_conformer",
+    "mel_band_roformer",
+    "mel_band_conformer",
+}
 LEGACY_DEMUCS_MODEL_TYPES = {"demucs", "tasnet", "legacy_demucs", "legacy_tasnet"}
 OUTPUT_NORMALIZE_TARGET_DBFS = -0.01
 OUTPUT_NORMALIZE_PEAK = 10 ** (OUTPUT_NORMALIZE_TARGET_DBFS / 20)
@@ -370,7 +376,14 @@ def _model_is_stereo(model_type, config):
         Any: Computed result."""
     if model_type == "vr":
         return True
-    if model_type in ["bs_roformer", "bs_roformer_hyperace", "mel_band_roformer", *LEGACY_DEMUCS_MODEL_TYPES]:
+    if model_type in [
+        "bs_roformer",
+        "bs_roformer_hyperace",
+        "bs_conformer",
+        "mel_band_roformer",
+        "mel_band_conformer",
+        *LEGACY_DEMUCS_MODEL_TYPES,
+    ]:
         return config.model.get("stereo", True)
     return True
 
@@ -621,9 +634,10 @@ class MSSeparator:
 
     Args:
         model_type (str): Model architecture/runtime type. Common values
-            include ``bs_roformer``, ``mel_band_roformer``, ``htdemucs``,
-            ``mdx23c``, ``bandit``, ``bandit_v2``, ``scnet``, ``apollo``,
-            ``vr``, ``legacy_demucs``, and ``legacy_tasnet``.
+            include ``bs_roformer``, ``bs_conformer``, ``mel_band_roformer``,
+            ``mel_band_conformer``, ``htdemucs``, ``mdx23c``, ``bandit``,
+            ``bandit_v2``, ``scnet``, ``apollo``, ``vr``, ``legacy_demucs``,
+            and ``legacy_tasnet``.
         model_path (str | os.PathLike): Path to the model weights file, such
             as a ``.ckpt``, ``.th``, ``.pth``, or VR model file.
         config_path (str | os.PathLike | None, optional): YAML config path for
@@ -870,21 +884,23 @@ class MSSeparator:
 
     @classmethod
     def from_model_name(cls, model_name, model_dir=None, download=False, source="modelscope", endpoint=None, **kwargs):
-        """Create a separator from a model catalog name or alias.
+        """Create a separator from a catalog or user-registered model name.
 
         This resolves the model type, weights path, config path, and auxiliary
-        files from the pymss model catalog, then forwards remaining keyword
-        arguments to ``MSSeparator(...)``.
+        files from the pymss model catalog or local user registry, then forwards
+        remaining keyword arguments to ``MSSeparator(...)``.
 
         Args:
-            model_name (str): Catalog model name or alias, for example
-                ``"bs_roformer_voc_hyperacev2"``.
+            model_name (str): Catalog model name/alias or a name previously
+                registered with ``register_model`` / ``pymss register``.
             model_dir (str | os.PathLike | None, optional): Directory used to
-                find or download model files. Uses the default pymss cache when
-                omitted. Defaults to None.
-            download (bool, optional): If True, missing model files are
-                downloaded before loading. If False, missing files raise
-                ``FileNotFoundError``. Defaults to False.
+                find or download catalog model files. Uses the default pymss
+                cache when omitted. Ignored for user-registered models that
+                already store absolute paths. Defaults to None.
+            download (bool, optional): If True, missing catalog model files are
+                downloaded before loading. Ignored for user-registered models.
+                If False, missing files raise ``FileNotFoundError``. Defaults to
+                False.
             source (str, optional): Download source passed to the downloader:
                 ``modelscope``, ``huggingface``, or ``hf-mirror``. Defaults to
                 ``"modelscope"``.
@@ -907,14 +923,22 @@ class MSSeparator:
             ...     output_format="flac",
             ...     inference_params={"normalize": True},
             ... )"""
-        if download:
+        from .model_registry import resolve_model
+
+        preview = resolve_model(model_name, model_dir=model_dir, require_supported=True, require_exists=False)
+        if download and preview.get("source") != "user":
             from .model_download import download_model
 
             download_model(model_name, model_dir=model_dir, source=source, endpoint=endpoint)
 
-        from .model_registry import resolve_model
-
         resolved = resolve_model(model_name, model_dir=model_dir, require_supported=True, require_exists=True)
+        kwargs = dict(kwargs)
+        from .model_registry import _merge_resolved_inference_params
+
+        kwargs["inference_params"] = _merge_resolved_inference_params(
+            resolved,
+            kwargs.pop("inference_params", None),
+        )
         return cls(
             model_type=resolved["model_type"],
             model_path=resolved["model_path"],
@@ -1039,7 +1063,7 @@ class MSSeparator:
         state_dict = _load_state_dict(self.model_type, self.model_path, self.device)
         model_type = _runtime_model_type(self.model_type, state_dict)
         model_kwargs_override = None
-        if model_type == "mel_band_roformer":
+        if model_type in {"mel_band_roformer", "mel_band_conformer"}:
             model_kwargs_override = {
                 "mlp_hidden_layers": _infer_mel_band_roformer_mlp_hidden_layers(state_dict),
             }
@@ -1104,7 +1128,7 @@ class MSSeparator:
             )
         else:
             self.logger.info(
-                f"MSS model params: chunk_size: {config.inference.get('chunk_size', None)}, overlap_size: {config.inference.get('overlap_size', None)}, stem_batch_size: {config.inference.get('stem_batch_size', None)}"
+                f"MSS model params: chunk_size: {config.audio.get('chunk_size', config.inference.get('chunk_size', None))}, overlap_size: {config.inference.get('overlap_size', None)}, stem_batch_size: {config.inference.get('stem_batch_size', None)}"
             )
             self.logger.debug(
                 f"MSS model params: mask_mode: {config.inference.get('mask_mode', None)}, cuda_attention_backend: {config.inference.get('cuda_attention_backend', None)}, mps_attention_backend: {config.inference.get('mps_attention_backend', None)}, mps_mlx_min_tokens: {config.inference.get('mps_mlx_min_tokens', None)}, mps_model_backend: {config.inference.get('mps_model_backend', None)}, mps_model_compute_dtype: {config.inference.get('mps_model_compute_dtype', None)}"
@@ -1188,6 +1212,14 @@ class MSSeparator:
             if key not in PASSTHROUGH_INFERENCE_PARAMS:
                 value = float(value) if key in {"post_process_threshold", "overlap"} else int(value)
             config[section][key] = value
+
+        from .utils import apply_msst_inference_compat
+
+        apply_msst_inference_compat(
+            config,
+            logger=self.logger,
+            user_set_chunk_size=params.get("chunk_size") is not None,
+        )
         return config
 
     def _save_output(self, instr, audio, sr, file_name, save_dir):

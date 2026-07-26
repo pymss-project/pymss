@@ -202,7 +202,9 @@ separator.process_folder('path/to/input_folder')
 
 - model_type: 模型类型，例如 'htdemucs'。 必须是以下之一
     ['bs_roformer',
+    'bs_conformer',
     'mel_band_roformer',
+    'mel_band_conformer',
     'htdemucs',
     'mdx23c',
     'bandit',
@@ -278,7 +280,13 @@ separator.process_folder("path/to/input_folder")
 ```
 
 ### Hugging Face 配置提醒
-一些从 Hugging Face 或 MSST-WebUI 下载的模型配置使用 `inference.num_overlap`。当前优化后的 pymss 路径使用 `inference.overlap_size`。如果配置里只有 `num_overlap`，请手动添加 `overlap_size`，或通过 `inference_params` 传入；否则 pymss 会回退到 50% overlap，推理会慢很多。
+一些从 Hugging Face 或 MSST-WebUI 下载的模型配置使用 `inference.num_overlap`。当前优化后的 pymss 路径使用 `inference.overlap_size`。若配置里只有 `num_overlap`，pymss 会自动换算：
+
+```text
+overlap_size = chunk_size - chunk_size // num_overlap
+```
+
+例如 `num_overlap: 2` 对应 50% overlap（与 MSST 一致，但更慢）。想加快推理请显式写更小的 `overlap_size`，或通过 `inference_params` 传入。
 
 推荐快速设置：
 
