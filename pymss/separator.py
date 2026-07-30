@@ -1148,7 +1148,7 @@ class MSSeparator:
         Returns:
             None: Supported options are applied directly to model modules."""
         if hasattr(model, "set_mask_mode"):
-            model.set_mask_mode(config.inference.get("mask_mode", "no_segm"))
+            model.set_mask_mode(config.inference.get("mask_mode", "full"))
         cuda_attention_backend = config.inference.get("cuda_attention_backend", None)
         if cuda_attention_backend is not None:
             for module in model.modules():
