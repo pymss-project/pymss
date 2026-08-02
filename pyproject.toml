@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymss"
-version = "2.0.16"
+version = "2.0.17"
 description = "Python package for music source separation."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
