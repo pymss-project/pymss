@@ -40,16 +40,11 @@ class ModelEntry:
     config_relpath: str
     auxiliary_relpaths: tuple
     size_bytes: int
-    sha256: str
     primary_category: str
     primary_category_cn: str
     secondary_category: str
     secondary_category_cn: str
     target_stem: str
-    config_instruments: str
-    config_target_instrument: str
-    classification_confidence: str
-    classification_basis: str
 
     @property
     def stem(self):
@@ -93,16 +88,11 @@ class ModelEntry:
             config_relpath=data.get("config_relpath", ""),
             auxiliary_relpaths=tuple(data.get("auxiliary_relpaths", ())),
             size_bytes=int(data.get("size_bytes", 0)),
-            sha256=data.get("sha256", ""),
             primary_category=data.get("primary_category", ""),
             primary_category_cn=data.get("primary_category_cn", ""),
             secondary_category=data.get("secondary_category", ""),
             secondary_category_cn=data.get("secondary_category_cn", ""),
             target_stem=data.get("target_stem", ""),
-            config_instruments=data.get("config_instruments", ""),
-            config_target_instrument=data.get("config_target_instrument", ""),
-            classification_confidence=data.get("classification_confidence", ""),
-            classification_basis=data.get("classification_basis", ""),
         )
 
 

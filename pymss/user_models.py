@@ -60,16 +60,11 @@ class UserModelEntry:
     config_relpath: str = ""
     auxiliary_relpaths: tuple = ()
     size_bytes: int = 0
-    sha256: str = ""
     primary_category: str = "user"
     primary_category_cn: str = "用户"
     secondary_category: str = "custom"
     secondary_category_cn: str = "自定义"
     target_stem: str = ""
-    config_instruments: str = ""
-    config_target_instrument: str = ""
-    classification_confidence: str = "user"
-    classification_basis: str = "user_registered"
     inference_params: dict = field(default_factory=dict)
 
     @property

@@ -73,16 +73,11 @@ def _catalog_entry(name, *, supported=True, category="vocal", secondary="test", 
         config_relpath=f"{category}/{secondary}/{stem}.yaml",
         auxiliary_relpaths=tuple(aux),
         size_bytes=123,
-        sha256="",
         primary_category=category,
         primary_category_cn="",
         secondary_category=secondary,
         secondary_category_cn="",
         target_stem="vocals",
-        config_instruments="vocals|instrument",
-        config_target_instrument="vocals",
-        classification_confidence="test",
-        classification_basis="test",
     )
 
 
