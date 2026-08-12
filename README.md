@@ -144,6 +144,7 @@ separator = MSSeparator.from_model_name(
     store_dirs="results",
 )
 separator.process_folder("path/to/input_file_or_folder")
+separator.close()
 ```
 
 `download=True` downloads missing model files before loading. Omit it for strict local-only loading.
@@ -219,9 +220,8 @@ separator = MSSeparator(
         "normalize": False
     } # Can be omitted
 )
-
-# process all audio files in the folder
-separator.process_folder('path/to/input_folder')
+with separator as s:
+    s.process_folder('path/to/input_file_or_folder')
 ```
 
 ### Manual Constructor Parameters
@@ -304,7 +304,8 @@ separator = MSSeparator.from_model_name(
         "aggression": 5,
     },
 )
-separator.process_folder("path/to/input_folder")
+with separator as s:
+    s.process_folder("path/to/input_file_or_folder")
 ```
 
 ### Hugging Face Configs

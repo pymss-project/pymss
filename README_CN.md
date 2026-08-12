@@ -143,6 +143,7 @@ separator = MSSeparator.from_model_name(
     store_dirs="results",
 )
 separator.process_folder("path/to/input_file_or_folder")
+separator.close()
 ```
 
 `download=True` 会在加载前下载缺失的模型文件；如果只想使用本地已有模型，可以省略它。
@@ -193,8 +194,8 @@ separator = MSSeparator(
         "normalize": False
     } # 可以省略
 )
-# 处理文件夹中的所有音频文件
-separator.process_folder('path/to/input_folder')
+with separator as s:
+    s.process_folder('path/to/input_file_or_folder')
 ```
 ### 手动构造参数
 
@@ -276,7 +277,8 @@ separator = MSSeparator.from_model_name(
         "aggression": 5,
     },
 )
-separator.process_folder("path/to/input_folder")
+with separator as s:
+    s.process_folder("path/to/input_file_or_folder")
 ```
 
 ### Hugging Face 配置提醒
