@@ -405,9 +405,11 @@ def _prepare_mix_channels(mix, is_stereo, logger):
         logger.warning("Track has more than 2 channels, taking mean of all channels and adding a second channel.")
         mono = np.mean(mix, axis=0)
         return np.stack([mono, mono], axis=0)
-    if not is_stereo and len(mix.shape) != 1:
-        logger.warning("Track has more than 1 channels, but model is mono, taking mean of all channels.")
-        return np.mean(mix, axis=0)
+    if not is_stereo:
+        if len(mix.shape) != 1:
+            logger.warning("Track has more than 1 channels, but model is mono, taking mean of all channels.")
+            return np.mean(mix, axis=0, keepdims=True)
+        return mix[None, :]
     return mix
 
 
