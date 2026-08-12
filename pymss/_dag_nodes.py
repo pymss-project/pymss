@@ -138,10 +138,11 @@ def _run_separation(
     """Drive one ``MSSeparator.separate`` call under inference_mode and progress."""
 
     mix, sample_rate = audio_to_numpy(audio)
-    # pymss separators expect [samples, channels] (see audio_to_numpy callers
-    # in comfy-mss: they transpose channel-first comfy AUDIO back to samples-first
-    # before calling separate). We undo our channel-first storage here.
-    model_audio = _to_samples_first(mix)
+    # pymss separators expect channel-first ``[channels, samples]``, which is
+    # exactly how AudioArtifact stores it. No transpose needed (the comfy-mss
+    # ``audio_to_numpy`` helper does the same — it returns channel-first and
+    # passes it straight to ``separator.separate``).
+    model_audio = np.asarray(mix, dtype=np.float32)
 
     with torch.inference_mode(False):
         with build_separator() as separator:
@@ -153,7 +154,7 @@ def _run_separation(
                 separator.progress_callback = _progress_for(ctx, node.id)
             except Exception:  # pragma: no cover - attribute is settable in practice
                 pass
-            results = separator.separate(model_audio, pbar=False, stems=stems or None)
+            results = separator.separate(model_audio, pbar=False, stems=None)
 
     return {stem: np.asarray(arr, dtype=np.float32) for stem, arr in results.items()}
 
@@ -671,8 +672,16 @@ def _execute_separate(kind: str, *, is_list: bool):
             for stem in stems_for_run:
                 value = results.get(stem)
                 if value is None:
-                    # Case-insensitive fallback (comfy-mss ``collect_stem_outputs``).
-                    value = next((v for k, v in results.items() if k.lower() == stem.lower()), np.zeros_like(audio.audio))
+                    # Case-insensitive fallback, mirroring comfy-mss
+                    # ``collect_stem_outputs``: the port label a user draws in
+                    # ComfyUI may not match the model's exact stem casing
+                    # (e.g. "vocals" vs "Vocals"). Match on lowercased names.
+                    value = next((v for k, v in results.items() if k.lower() == stem.lower()), None)
+                if value is None:
+                    raise DAGError(
+                        f"node {node.id!r} declared stem {stem!r} but model produced "
+                        f"only {sorted(results.keys())}"
+                    )
                 artifact = numpy_to_audio(np.asarray(value, dtype=np.float32), audio.sample_rate, stem_name=stem, source_path=audio.source_path)
                 all_audio_results.append(artifact)
                 all_stem_names.append(StringArtifact(stem))
@@ -924,16 +933,16 @@ def _resolve_user_model(name: str):
     ``None`` when no user model matches.
     """
 
-    from .user_models import load_user_models
+    from .user_models import list_user_models
 
     needle = name.strip().lower()
-    for entry in load_user_models():
+    for entry in list_user_models():
         candidates = [entry.name, *(entry.aliases or ())]
         if any(str(c).strip().lower() == needle for c in candidates):
             return {
                 "model_path": entry.model_path,
                 "config_path": entry.config_path,
-                "model_type": entry.model_type,
+                "model_type": entry.model_type or entry.architecture,
             }
     return None
 

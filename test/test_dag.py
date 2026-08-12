@@ -383,3 +383,101 @@ def test_dag_runs_ensemble_of_inverted_and_direct_stem(monkeypatch, tmp_path):
     assert saved, "ensemble graph should have saved one file"
     # avg(mix + 0.1, -(mix - 0.1)) = 0.1 regardless of the mix values.
     assert np.allclose(saved[0][1], 0.1, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Regressions found by real-model smoke testing
+# ---------------------------------------------------------------------------
+
+
+def test_separate_node_matches_stems_case_insensitively(monkeypatch, tmp_path):
+    """A node declaring 'vocals'/'other' must still pick up model outputs that
+    use different casing (e.g. 'Vocals'/'Instrumental').
+
+    Regression for a real-model run where bs_conformer returned capitalised
+    stem names and the node failed with "Invalid instrument key".
+    """
+
+    from pymss.dag import DAGLink
+
+    _stub_audio_io(monkeypatch, [])
+    saved: list = []
+
+    def _save(path, audio, sr, fmt, ap):
+        saved.append(Path(path).name)
+
+    import pymss.audio_io as audio_io
+
+    monkeypatch.setattr(audio_io, "save_audio", _save)
+
+    class CasingSeparator(FakeSeparator):
+        def separate(self, mix, pbar=False, stems=None):
+            # Return names with different casing than the node declared.
+            base = np.asarray(mix, dtype=np.float32)
+            sm = base.T if base.ndim == 2 and base.shape[0] in (1, 2) else base
+            return {"VOCALS": sm + 0.1, "OTHER": sm - 0.1}
+
+    def factory(**kw):
+        return CasingSeparator(kw.get("model_name", "?"), [])
+
+    nodes = [
+        DAGNode(id=1, type="pymss_load_audio", inputs=[], data={"widgets_values": ["x.wav"], "outputs": []}),
+        DAGNode(id=4, type="pymss_mss_params", inputs=[], data={"widgets_values": [1, "Default", "Default", False, False, False]}),
+        DAGNode(id=2, type="mss_separate", inputs=[None, None], data={
+            "widgets_values": ["m", "auto", True, "modelscope", "0", False],
+            "outputs": [
+                {"name": "vocals (Audio)", "type": "AUDIO"},
+                {"name": "vocals (String)", "type": "STRING"},
+                {"name": "other (Audio)", "type": "AUDIO"},
+                {"name": "other (String)", "type": "STRING"},
+            ],
+        }),
+        DAGNode(id=3, type="pymss_save_audio", inputs=[None] * 8, data={"widgets_values": ["wav", "voc", "44100", "FLOAT", "PCM_24", "320k"]}),
+    ]
+    pool: list = []
+    nodes[2].inputs[0] = DAGLink(link_id=1, source_node_id=1, source_slot=0, target_node_id=2, target_slot=0, type="AUDIO")
+    nodes[2].inputs[1] = DAGLink(link_id=2, source_node_id=4, source_slot=0, target_node_id=2, target_slot=1, type="PYMSS_MSS_PARAMS")
+    nodes[3].inputs[0] = DAGLink(link_id=3, source_node_id=2, source_slot=0, target_node_id=3, target_slot=0, type="AUDIO")
+
+    cache = SeparatorCache(factory=factory)
+    # Node declares 'vocals' but model returns 'Vocals'; must not raise.
+    run_dag(DAG(nodes=nodes), output_dir=tmp_path, input_path="x.wav", separator_cache=cache, download=False)
+    cache.close()
+    assert saved == ["vocals.wav"]
+
+
+def test_separator_receives_channel_first_audio(monkeypatch, tmp_path):
+    """Separator must get [channels, samples] channel-first, not transposed.
+
+    Regression for a real-model run where bs_conformer raised
+    'stereo needs to be set to True if passing in audio signal that is stereo'.
+    """
+
+    from pymss.dag import DAGLink
+
+    _stub_audio_io(monkeypatch, [])
+    received: dict = {}
+
+    class ShapeCheckingSeparator(FakeSeparator):
+        def separate(self, mix, pbar=False, stems=None):
+            received["shape"] = np.asarray(mix).shape
+            # Return the mix unchanged so save works.
+            return {"vocals": np.asarray(mix, dtype=np.float32)}
+
+    def factory(**kw):
+        return ShapeCheckingSeparator(kw.get("model_name", "?"), [])
+
+    nodes = [
+        DAGNode(id=1, type="pymss_load_audio", inputs=[], data={"widgets_values": ["x.wav"], "outputs": []}),
+        DAGNode(id=2, type="mss_separate", inputs=[None, None], data={
+            "widgets_values": ["m", "auto", True, "modelscope", "0", False],
+            "outputs": [{"name": "vocals (Audio)", "type": "AUDIO"}, {"name": "vocals (String)", "type": "STRING"}],
+        }),
+    ]
+    nodes[1].inputs[0] = DAGLink(link_id=1, source_node_id=1, source_slot=0, target_node_id=2, target_slot=0, type="AUDIO")
+
+    cache = SeparatorCache(factory=factory)
+    run_dag(DAG(nodes=nodes), output_dir=tmp_path, input_path="x.wav", separator_cache=cache, download=False)
+    cache.close()
+    # load_audio stub returns shape (2, 3) channel-first; separator must see the same.
+    assert received["shape"] == (2, 3)
