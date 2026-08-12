@@ -481,3 +481,63 @@ def test_separator_receives_channel_first_audio(monkeypatch, tmp_path):
     cache.close()
     # load_audio stub returns shape (2, 3) channel-first; separator must see the same.
     assert received["shape"] == (2, 3)
+
+
+# ---------------------------------------------------------------------------
+# Real-model integration (skipped unless the catalog model is present locally)
+# ---------------------------------------------------------------------------
+
+
+def _model_available(name: str) -> bool:
+    try:
+        from pymss.model_registry import resolve_model
+        import os
+
+        resolved = resolve_model(name, require_supported=True, require_exists=True)
+        path = resolved.get("model_path")
+        return bool(path and os.path.isfile(path))
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(
+    not _model_available("melband_roformer_inst_v2.ckpt"),
+    reason="melband_roformer_inst_v2.ckpt not present locally",
+)
+def test_example_mss_separate_runs_with_real_model(tmp_path):
+    """End-to-end: the unmodified comfy-mss example graph + a real catalog model.
+
+    Loads ``example_mss_separate.json`` exactly as shipped, feeds a short sine
+    sweep, and asserts both ``other`` and ``vocals`` stems land on disk with the
+    expected shape. This is the acceptance-criteria smoke test — it exercises
+    catalog resolution (mss_separate + from_model_name), the StringConcatenate
+    filename path, and the full separate→save chain under real weights.
+    """
+
+    import soundfile as sf
+
+    sr = 44100
+    t = np.linspace(0, 0.2, int(sr * 0.2), endpoint=False)
+    audio = 0.2 * np.stack([np.sin(2 * np.pi * 440 * t), np.sin(2 * np.pi * 445 * t)], axis=1).astype("float32")
+    input_path = tmp_path / "input.wav"
+    sf.write(str(input_path), audio, sr)
+
+    dag = load_comfy_file(COMFY_EXAMPLES_DIR / "example_mss_separate.json")
+    saved = run_dag(
+        dag,
+        output_dir=tmp_path,
+        input_path=str(input_path),
+        device="auto",
+        download=False,
+    )
+    assert len(saved) == 2, f"expected 2 stems saved, got {saved}"
+    names = {Path(p).stem for p in saved}
+    assert any("other" in n for n in names), names
+    assert any("vocals" in n for n in names), names
+    # A pure 440Hz sine has no vocal content: other should carry the energy,
+    # vocals should be near-silent. Just assert both are readable wav files.
+    for path in saved:
+        data, file_sr = sf.read(path)
+        assert data.ndim == 2 and data.shape[1] == 2, f"{path} not stereo"
+        assert file_sr == sr
+        assert data.shape[0] == int(sr * 0.2)
