@@ -106,6 +106,26 @@ pymss workflow run -c vocal_chain.yaml \
 
 workflow 中的 `input: input` 表示原始音频，`input: split.other` 表示使用 `split` 步骤输出的 `other` 音轨。文件夹输入会按 step/model 批处理：第 1 个 step 会先跑完所有输入，再加载第 2 个 step。`save` 控制保存哪些音轨以及保存到输出目录下的哪个子目录。默认批量输出会按 `results/song/vocal/song_vocals.wav` 分到每个音频的子目录；加 `--output-layout flat` 后会输出为 `results/vocal/song_vocals.wav`。同一批里输入 stem 重名时会自动加后缀，例如 `song_3_vocals.wav`。共享推理参数如 `batch_size` 可以放在 `defaults.inference_params`，每个模型单独的参数如各自的 `overlap_size` 可以放在该 step 的 `inference_params`。
 
+### CLI Comfy 工作流
+
+直接运行原生 **comfy-mss** JSON 工作流——无需安装 ComfyUI。pymss 在自己的
+`MSSeparator` 之上重新实现了 comfy-mss 的节点语义，因此从 comfy-mss（或
+pymss-studio 编辑器）导出的任何图都能原样运行：
+
+```sh
+pymss comfy run -c workflow.json -i input.wav -o results --download
+```
+
+支持全部 comfy-mss 节点类型：`pymss_load_audio`(_batch)、
+`mss_separate`(_list)、`vr_separate`(_list)、`custom_mss_separate`(_list)、
+`pymss_mss_params`、`pymss_vr_params`、`pymss_audio_ensemble`、
+`pymss_audio_invert_phase`、`pymss_audio_normalize`、`pymss_save_audio`，以及
+`PreviewAudio`（空操作）和 `StringConcatenate`（用于拼接文件名）。未识别的节点
+类型默认会报错；传 `--no-strict` 可跳过并警告。
+
+`workflow run` 与 `comfy run` 共用同一套 DAG 执行核心，因此 YAML 工作流与
+comfy-mss JSON 图在共有节点类型上的行为完全一致。
+
 ### CLI Ensemble
 
 ```sh

@@ -107,6 +107,29 @@ pymss workflow run -c vocal_chain.yaml \
 
 In a workflow, `input: input` means the original audio, and `input: split.other` means the `other` stem produced by the `split` step. For folder inputs, workflow inference batches by step/model: step 1 runs for every input before step 2 is loaded. `save` controls which stems are written and which output subdirectory they use. By default, workflow batch outputs are grouped as `results/song/vocal/song_vocals.wav`; pass `--output-layout flat` to write them as `results/vocal/song_vocals.wav` instead. Duplicate input stems in the same batch are disambiguated with suffixes such as `song_3_vocals.wav`. Put shared inference options such as `batch_size` under `defaults.inference_params`, and put model-specific options such as each step's `overlap_size` under that step's `inference_params`.
 
+### CLI comfy workflow
+
+Run a native **comfy-mss** JSON workflow directly — no ComfyUI installation
+required. pymss reimplements the comfy-mss node semantics on top of its own
+`MSSeparator`, so any graph exported from comfy-mss (or the pymss-studio
+editor) runs as-is:
+
+```sh
+pymss comfy run -c workflow.json -i input.wav -o results --download
+```
+
+All comfy-mss node types are supported: `pymss_load_audio`(_batch),
+`mss_separate`(_list), `vr_separate`(_list), `custom_mss_separate`(_list),
+`pymss_mss_params`, `pymss_vr_params`, `pymss_audio_ensemble`,
+`pymss_audio_invert_phase`, `pymss_audio_normalize`, `pymss_save_audio`, plus
+`PreviewAudio` (no-op) and `StringConcatenate` (for filename building). Unknown
+node types are rejected by default; pass `--no-strict` to skip them with a
+warning.
+
+The `workflow run` and `comfy run` commands share the same DAG execution core,
+so YAML workflows and comfy-mss JSON graphs behave identically for the node
+types they have in common.
+
 ### CLI ensemble
 
 ```sh
