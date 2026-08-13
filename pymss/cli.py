@@ -351,12 +351,13 @@ def cmd_workflow_validate(args):
 
 
 def cmd_workflow_run(args):
-    """Run an audio workflow from a YAML/JSON file."""
+    """Run an audio workflow from a YAML/JSON file via the unified DAG core."""
+    from .graph import LegacyWorkflowRunner
+
     logger = get_separation_logger()
-    files = run_workflow_file(
-        args.config,
-        args.input,
-        args.output,
+    workflow = load_workflow_file(args.config)
+    runner = LegacyWorkflowRunner(
+        workflow,
         model_dir=args.model_dir,
         device=args.device,
         output_format=args.output_format,
@@ -375,7 +376,41 @@ def cmd_workflow_run(args):
         logger=logger,
         debug=args.debug,
     )
+    files = runner.run(args.input, args.output)
     logger.info(f"Processed {len(files)} file(s).")
+    return 0
+
+
+def cmd_comfy_run(args):
+    """Run a native comfy-mss JSON workflow via the DAG core."""
+    from .graph import load_comfy_file, run_dag
+
+    logger = get_separation_logger()
+    dag = load_comfy_file(args.config)
+    saved = run_dag(
+        dag,
+        output_dir=args.output,
+        input_path=args.input,
+        input_paths=args.input_folder,
+        logger=logger,
+        debug=args.debug,
+        strict=args.strict,
+        model_dir=args.model_dir,
+        download=args.download,
+        source=args.source,
+        endpoint=args.endpoint,
+        device=args.device,
+        output_format=args.output_format,
+        audio_params={
+            "wav_bit_depth": args.wav_bit_depth,
+            "flac_bit_depth": args.flac_bit_depth,
+            "mp3_bit_rate": args.mp3_bit_rate,
+            "m4a_bit_rate": args.m4a_bit_rate,
+            "m4a_codec": args.m4a_codec,
+            "m4a_aac_at_quality": args.m4a_aac_at_quality,
+        },
+    )
+    logger.info(f"Saved {len(saved)} file(s).")
     return 0
 
 
@@ -715,6 +750,49 @@ def build_parser():
     workflow_run_parser.add_argument("--m4a-aac-at-quality", default=2, type=int)
     workflow_run_parser.add_argument("--debug", action="store_true")
     workflow_run_parser.set_defaults(func=cmd_workflow_run)
+
+    # ==========================
+    # Comfy (native comfy-mss JSON workflow via the DAG core)
+    # ==========================
+    comfy_parser = subparsers.add_parser(
+        "comfy",
+        help="Run a native comfy-mss JSON workflow through the DAG core (no ComfyUI needed).",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    comfy_subparsers = comfy_parser.add_subparsers(dest="comfy_command", required=True)
+
+    comfy_run_parser = comfy_subparsers.add_parser(
+        "run",
+        help="Run a comfy-mss JSON workflow file.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    comfy_run_parser.add_argument("-c", "--config", required=True, help="comfy-mss workflow JSON file.")
+    comfy_run_parser.add_argument(
+        "-i", "--input", help="Input audio file. Consumed by pymss_load_audio / input_audio nodes."
+    )
+    comfy_run_parser.add_argument(
+        "--input-folder",
+        action="append",
+        default=None,
+        help="Input folder for pymss_load_audio_batch nodes. Repeatable.",
+    )
+    comfy_run_parser.add_argument("-o", "--output", default="results", help="Output folder.")
+    comfy_run_parser.add_argument("--model-dir", help="Local model cache directory.")
+    comfy_run_parser.add_argument("--download", action="store_true", help="Download missing model files before running.")
+    comfy_run_parser.add_argument("--source", default="modelscope", choices=["modelscope", "huggingface", "hf-mirror"])
+    comfy_run_parser.add_argument("--endpoint", help="Custom resolve endpoint. It must serve files by relative path.")
+    comfy_run_parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps", "mlx"])
+    comfy_run_parser.add_argument("--format", choices=["wav", "flac", "mp3", "m4a", "aac", "opus", "vorbis", "ogg"], dest="output_format")
+    comfy_run_parser.add_argument("--strict", dest="strict", action="store_true", default=True, help="Fail on unknown node types (default).")
+    comfy_run_parser.add_argument("--no-strict", dest="strict", action="store_false", help="Skip unknown node types with a warning.")
+    comfy_run_parser.add_argument("--wav-bit-depth", default="FLOAT", choices=["FLOAT", "PCM_16", "PCM_24"])
+    comfy_run_parser.add_argument("--flac-bit-depth", default="PCM_16", choices=["PCM_16", "PCM_24"])
+    comfy_run_parser.add_argument("--mp3-bit-rate", default="320k")
+    comfy_run_parser.add_argument("--m4a-bit-rate", default="512k")
+    comfy_run_parser.add_argument("--m4a-codec", default="aac")
+    comfy_run_parser.add_argument("--m4a-aac-at-quality", default=2, type=int)
+    comfy_run_parser.add_argument("--debug", action="store_true")
+    comfy_run_parser.set_defaults(func=cmd_comfy_run)
 
     # ==========================
     # Server

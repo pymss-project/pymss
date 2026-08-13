@@ -575,11 +575,14 @@ def _make_model_separator_factory(ctx: NodeContext, node: DAGNode, *, kind: str,
     widgets_values = node_data(node).get("widgets_values", [])
     model_name = _clean_model_display_name(str(widget(widgets_values, 0, "") or ""))
     download_missing = _coerce_bool(None, widget(widgets_values, 3 if kind != "custom" else None, True)) if kind != "custom" else True
-    source = str(widget(widgets_values, 4 if kind == "mss" or kind == "vr" else None, "modelscope") or "modelscope")
+    source = str(widget(widgets_values, 4 if kind == "mss" or kind == "vr" else None, "") or "")
+    if not source:
+        source = ctx.source or "modelscope"
     if kind == "vr":
         # vr widgets: [model, device, download_missing, source, device_ids, debug, ...]
         download_missing = _coerce_bool(None, widget(widgets_values, 3, True))
-        source = str(widget(widgets_values, 4, "modelscope") or "modelscope")
+        widget_source = str(widget(widgets_values, 4, "") or "")
+        source = widget_source or ctx.source or "modelscope"
 
     def _factory():
         separator_kwargs = _common_separator_kwargs(
