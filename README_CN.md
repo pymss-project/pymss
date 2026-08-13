@@ -148,14 +148,14 @@ pymss 有插件系统，用于扩展能力——音频 DSP 操作、音频编解
 **安装插件：**
 
 ```sh
-pymss install opus-toolkit        # 按官方目录名
+pymss install my-plugin        # 按官方目录名（见 pymss-plugins 仓库）
 pymss install https://github.com/xxx/pymss-dsp-eq   # 按 git URL
 pymss install ./my-local-plugin   # 按本地路径
 pymss plugins list                # 查看已安装插件及加载状态
-pymss uninstall opus-toolkit
+pymss uninstall my-plugin
 ```
 
-插件放在 `~/.pymss/plugins/`（可用 `PYMSS_PLUGINS_DIR` 覆盖）。单个插件加载失败不会影响其他插件。
+插件放在 `~/.pymss/plugins/`（可用 `PYMSS_PLUGINS_DIR` 覆盖）。单个插件加载失败不会影响其他插件。官方插件目录是一个独立的 `pymss-plugins` 仓库（里面的 `registry.json` 映射短名到 git URL）；可通过 `PYMSS_PLUGINS_REGISTRY` 指向自定义目录。
 
 **编写插件** —— 注册一个能力，pymss 会让它对 Python API、CLI 和工作流节点都可用：
 

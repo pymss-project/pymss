@@ -149,14 +149,14 @@ pymss has a plugin system for extending capabilities — audio DSP operations, a
 **Install a plugin:**
 
 ```sh
-pymss install opus-toolkit        # by official registry name
+pymss install my-plugin        # by official registry name (see pymss-plugins repo)
 pymss install https://github.com/xxx/pymss-dsp-eq   # by git URL
 pymss install ./my-local-plugin   # by local path
 pymss plugins list                # show installed plugins + load status
-pymss uninstall opus-toolkit
+pymss uninstall my-plugin
 ```
 
-Plugins live in `~/.pymss/plugins/` (override with `PYMSS_PLUGINS_DIR`). A single plugin failing to load never blocks others.
+Plugins live in `~/.pymss/plugins/` (override with `PYMSS_PLUGINS_DIR`). A single plugin failing to load never blocks others. The official plugin registry is a separate `pymss-plugins` repo (a `registry.json` mapping short names to git URLs) — point `pymss install <name>` at a custom one via `PYMSS_PLUGINS_REGISTRY`.
 
 **Write a plugin** — register a capability, and pymss makes it available to the Python API, the CLI, and workflow nodes:
 
