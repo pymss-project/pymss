@@ -281,3 +281,45 @@ def test_cli_install_and_plugins_list(tmp_path, monkeypatch):
     # plugins dir
     rc = main(["plugins", "dir"])
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Registry entry parsing (string URL vs {url, subpath} object)
+# ---------------------------------------------------------------------------
+
+
+def test_registry_entry_dict_parsing(monkeypatch, tmp_path):
+    """A registry entry may be {url, subpath} for monorepo plugin collections."""
+    from pymss.plugins import install as install_mod
+
+    # Fake registry with both shapes.
+    fake_registry = {
+        "plain": "https://example.com/plain.git",
+        "mono": {"url": "https://example.com/mono.git", "subpath": "plugins/mono"},
+    }
+    monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake_registry)
+    monkeypatch.setattr(install_mod, "_clone", lambda url, dest, subpath=None: dest.mkdir(parents=True))
+
+    plugins_dir = tmp_path / "p"
+    # plain string entry
+    r = install_mod.install("plain", plugins_dir=plugins_dir)
+    assert r.source == "registry" and r.name == "plain"
+    # dict entry with subpath — _clone receives the subpath
+    captured = {}
+    monkeypatch.setattr(
+        install_mod, "_clone",
+        lambda url, dest, subpath=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
+    )
+    r = install_mod.install("mono", plugins_dir=plugins_dir)
+    assert captured["url"] == "https://example.com/mono.git"
+    assert captured["subpath"] == "plugins/mono"
+
+
+def test_registry_entry_missing_url_raises(monkeypatch, tmp_path):
+    from pymss.plugins import install as install_mod
+    from pymss.plugins.install import InstallError
+
+    fake_registry = {"bad": {"subpath": "x"}}  # no url
+    monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake_registry)
+    with pytest.raises(InstallError, match="no 'url'"):
+        install_mod.install("bad", plugins_dir=tmp_path / "p")

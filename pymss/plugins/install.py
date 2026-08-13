@@ -85,21 +85,44 @@ def _derive_plugin_name(arg: str) -> str:
     return base
 
 
-def _clone(url: str, dest: Path) -> None:
+def _clone(url: str, dest: Path, subpath: str | None = None) -> None:
+    """Clone a repo (shallow). If subpath is given, only that subdir is kept.
+
+    For monorepo-style plugin collections (e.g. pymss-plugins with one subdir
+    per plugin), we clone to a temp dir then copy the subdir out, so the
+    installed plugin directory contains just that plugin — not the whole repo.
+    """
     if not _git_available():
         raise InstallError("git is required to install plugins from a URL; please install git first.")
     if dest.exists():
         raise InstallError(f"destination already exists: {dest} (uninstall it first)")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.run(  # noqa: S603, S607
-            ["git", "clone", "--depth", "1", url, str(dest)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise InstallError(f"git clone failed: {exc.stderr.strip() or exc}") from exc
+    if subpath:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_repo = Path(tmp) / "repo"
+            try:
+                subprocess.run(  # noqa: S603, S607
+                    ["git", "clone", "--depth", "1", url, str(tmp_repo)],
+                    check=True, capture_output=True, text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                raise InstallError(f"git clone failed: {exc.stderr.strip() or exc}") from exc
+            subdir = tmp_repo / subpath
+            if not subdir.is_dir():
+                raise InstallError(
+                    f"plugin subpath {subpath!r} not found in {url} (checked {subdir})"
+                )
+            shutil.copytree(subdir, dest)
+    else:
+        try:
+            subprocess.run(  # noqa: S603, S607
+                ["git", "clone", "--depth", "1", url, str(dest)],
+                check=True, capture_output=True, text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise InstallError(f"git clone failed: {exc.stderr.strip() or exc}") from exc
 
 
 def _copy_dir(src: Path, dest: Path) -> None:
@@ -137,9 +160,19 @@ def install(arg: str, plugins_dir: Path | None = None) -> InstallResult:
             f"'{arg}' is not in the official plugin registry. "
             f"Available: {available}. Or install by URL/path."
         )
-    url = registry[arg]
+    entry = registry[arg]
+    # Registry entries may be either a plain URL string, or an object
+    # {"url": ..., "subpath": ...} for monorepo plugin collections.
+    if isinstance(entry, dict):
+        url = entry.get("url", "")
+        subpath = entry.get("subpath")
+        if not url:
+            raise InstallError(f"registry entry for '{arg}' has no 'url' field")
+    else:
+        url = str(entry)
+        subpath = None
     dest = plugins_dir / arg
-    _clone(url, dest)
+    _clone(url, dest, subpath=subpath)
     return InstallResult(name=arg, path=dest, source="registry")
 
 
