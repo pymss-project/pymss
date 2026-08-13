@@ -87,7 +87,99 @@ def _make_save_executor(fmt: str):
 register_node("SaveAudio", signature=_save_audio_signature, execute=_make_save_executor("flac"))
 register_node("SaveAudioMP3", signature=_save_audio_mp3_signature, execute=_make_save_executor("mp3"))
 register_node("SaveAudioOpus", signature=_save_audio_mp3_signature, execute=_make_save_executor("opus"))
-OUTPUT_NODE_TYPES.update({"SaveAudio", "SaveAudioMP3", "SaveAudioOpus"})
+
+
+def _save_audio_advanced_signature(node: DAGNode) -> NodeSignature:
+    return NodeSignature(
+        inputs=[
+            PortSpec(name="audio", type=AUDIO),
+            PortSpec(name="filename_prefix", type=STRING),
+            PortSpec(name="format", type="COMBO"),
+            PortSpec(name="quality", type="COMBO"),
+        ],
+        output_names=["audio"],
+        output_types=[AUDIO],
+        is_output_node=True,
+    )
+
+
+# Quality presets -> codec keyword value mapping. V0 is LAME's variable
+# bitrate; pymss's mp3 encoder takes a fixed bit_rate, so V0 maps to 320k as a
+# high-quality approximation. flac has no quality knob.
+_MP3_QUALITY = {"V0": "320k", "128k": "128k", "320k": "320k"}
+_OPUS_QUALITY = {"64k": "64k", "96k": "96k", "128k": "128k", "192k": "192k", "320k": "320k"}
+
+
+def _execute_save_audio_advanced(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
+    """ComfyUI ``SaveAudioAdvanced`` — one node for flac/mp3/opus with quality.
+
+    This is ComfyUI's consolidated save node (CORE-202) that is deprecating the
+    per-format SaveAudio/SaveAudioMP3/SaveAudioOpus nodes. The format is chosen
+    via a widget rather than a separate node type. We dispatch through the
+    codec capability pool.
+    """
+
+    from ..audio_io import save_audio
+
+    audio_input = inputs.get("audio")
+    if audio_input is None:
+        raise DAGError("SaveAudioAdvanced requires an AUDIO input")
+    node = ctx.nodes_by_id[ctx.current_node_id]
+    widgets = node.data.get("widgets_values", [])
+    prefix = (
+        string_value(inputs.get("filename_prefix", StringArtifact("")))
+        or str(widget(widgets, 0, "audio/ComfyUI") or "audio/ComfyUI")
+    )
+    # The format widget is a DynamicCombo; exported as [format_name, quality] in
+    # widgets_values (index 1 = format, index 2 = quality), but some front-ends
+    # pack it as a nested dict/list. Handle both.
+    raw_format = widget(widgets, 1, "flac")
+    raw_quality = widget(widgets, 2, "")
+    if isinstance(raw_format, (list, tuple)) and raw_format:
+        # Nested form: [format_name, quality]
+        fmt_name = str(raw_format[0]).lower()
+        quality = str(raw_format[1]) if len(raw_format) > 1 else ""
+    elif isinstance(raw_format, dict):
+        fmt_name = str(raw_format.get("format", "flac")).lower()
+        quality = str(raw_format.get("quality", "") or raw_quality or "")
+    else:
+        fmt_name = str(raw_format).lower() or "flac"
+        quality = str(raw_quality or "")
+
+    # Build codec params from the quality preset.
+    audio_params = dict(ctx.audio_params)
+    if fmt_name == "mp3":
+        audio_params["mp3_bit_rate"] = _MP3_QUALITY.get(quality, "320k")
+    elif fmt_name == "opus":
+        # pymss's opus encoder (soundfile OGG/OPUS) uses libsndfile's default
+        # bitrate; we honor the chosen value via the m4a-style bit_rate key only
+        # if a path uses it. soundfile ignores unknown keys, so this is safe.
+        audio_params["opus_bit_rate"] = _OPUS_QUALITY.get(quality, "128k")
+
+    # Resolve output path from the filename_prefix.
+    parts = prefix.replace("\\", "/").split("/")
+    folder = safe_filename_part("/".join(parts[:-1])) if len(parts) > 1 else ""
+    stem = safe_filename_part(parts[-1]) if parts[-1] else "audio"
+    target_dir = ctx.output_dir / folder if folder else ctx.output_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    audios = audio_input if isinstance(audio_input, list) else [audio_input]
+    saved: list[str] = []
+    for i, art in enumerate(audios):
+        if not isinstance(art, AudioArtifact):
+            raise DAGError("SaveAudioAdvanced received non-AUDIO value")
+        suffix = f"_{i + 1}" if len(audios) > 1 else ""
+        path = target_dir / f"{stem}{suffix}.{fmt_name}"
+        arr = art.audio
+        save_arr = arr.T if arr.ndim == 2 else arr[:, None]
+        save_audio(str(path), np.asfortranarray(save_arr), art.sample_rate, fmt_name, audio_params)
+        saved.append(str(path))
+    # Pass the audio through (output slot 0) so downstream nodes can use it.
+    return NodeResult(outputs={0: audio_input}, saved_paths=saved)
+
+
+register_node("SaveAudioAdvanced", signature=_save_audio_advanced_signature, execute=_execute_save_audio_advanced)
+OUTPUT_NODE_TYPES.update({"SaveAudio", "SaveAudioMP3", "SaveAudioOpus", "SaveAudioAdvanced"})
 
 
 def _save_with_prefix(ctx: NodeContext, inputs: dict[str, Any], fmt: str) -> NodeResult:

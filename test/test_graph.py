@@ -207,3 +207,57 @@ def test_no_torchaudio_in_graph_code():
         code = "\n".join(code_lines)
         assert "import torchaudio" not in code, f"{mod.__name__} imports torchaudio"
         assert "torchaudio." not in code, f"{mod.__name__} calls torchaudio."
+
+
+# ---------------------------------------------------------------------------
+# SaveAudioAdvanced (ComfyUI CORE-202 consolidated save node)
+# ---------------------------------------------------------------------------
+
+
+def test_save_audio_advanced_registered():
+    reg = get_registry()
+    assert "SaveAudioAdvanced" in reg.nodes
+    assert "SaveAudioAdvanced" in OUTPUT_NODE_TYPES
+
+
+def _make_advanced_flow(format_name, quality=""):
+    return {
+        "last_node_id": 2, "last_link_id": 1,
+        "nodes": [
+            {"id": 1, "type": "pymss_load_audio", "inputs": [],
+             "outputs": [{"name": "audio", "type": "AUDIO", "links": [1]},
+                         {"name": "name", "type": "STRING", "links": None}],
+             "widgets_values": ["in.wav"]},
+            {"id": 2, "type": "SaveAudioAdvanced",
+             "inputs": [{"name": "audio", "type": "AUDIO", "link": 1},
+                       {"name": "filename_prefix", "type": "STRING", "link": None},
+                       {"name": "format", "type": "COMBO", "link": None},
+                       {"name": "quality", "type": "COMBO", "link": None}],
+             "outputs": [{"name": "audio", "type": "AUDIO", "links": None}],
+             "widgets_values": ["adv_out/track", format_name, quality]},
+        ],
+        "links": [[1, 1, 0, 2, 0, "AUDIO"]],
+    }
+
+
+def test_save_audio_advanced_mp3(tone_file, tmp_path):
+    dag = load_comfy_graph(_make_advanced_flow("mp3", "128k"))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file,
+                    separator_cache=SeparatorCache())
+    assert len(saved) == 1
+    assert saved[0].endswith(".mp3")
+    assert os.path.getsize(saved[0]) > 0
+
+
+def test_save_audio_advanced_opus(tone_file, tmp_path):
+    dag = load_comfy_graph(_make_advanced_flow("opus", "96k"))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file,
+                    separator_cache=SeparatorCache())
+    assert saved[0].endswith(".opus")
+
+
+def test_save_audio_advanced_flac(tone_file, tmp_path):
+    dag = load_comfy_graph(_make_advanced_flow("flac"))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file,
+                    separator_cache=SeparatorCache())
+    assert saved[0].endswith(".flac")
