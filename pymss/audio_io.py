@@ -213,7 +213,8 @@ def save_audio(path, audio, sr, output_format, audio_params):
             stereo arrays should be shaped as ``(samples, 2)``.
         sr (int): Sample rate in Hz.
         output_format (str): Output format. Supported values are ``wav``,
-            ``flac``, ``mp3``, and ``m4a``.
+            ``flac``, ``mp3``, ``m4a``, ``aac``, ``opus``, ``vorbis``, and
+            ``ogg`` (alias for vorbis).
         audio_params (dict): Encoding options. Supported keys include
             ``wav_bit_depth`` (``FLOAT``, ``PCM_16``, ``PCM_24``),
             ``flac_bit_depth`` (currently ``PCM_24`` uses soundfile),
@@ -242,39 +243,38 @@ def save_audio(path, audio, sr, output_format, audio_params):
         ...     {"flac_bit_depth": "PCM_24"},
         ... )"""
     output_format = output_format.lower()
-    audio_array = np.asarray(audio)
-    layout = "stereo" if audio_array.ndim > 1 and audio_array.shape[1] == 2 else "mono"
 
-    if output_format == "mp3":
-        codec = "libmp3lame"
-    elif output_format == "m4a":
-        codec = audio_params.get("m4a_codec", "aac")
+    # Dispatch to the registered codec capability. Each format registers a
+    # f"{format}_encode" capability; this lets plugins add new formats without
+    # touching save_audio, and unknown formats raise CapabilityNotFound instead
+    # of silently falling through to wav.
+    from .plugins.codecs import register_builtin_codecs
+    from .plugins.registry import _REGISTRY
+
+    register_builtin_codecs()  # idempotent
+    cap_name = f"{output_format}_encode"
+    if cap_name not in _REGISTRY.capabilities:
+        from .plugins.registry import CapabilityNotFound
+
+        raise CapabilityNotFound(cap_name)
+    encode = _REGISTRY.capabilities[cap_name].func
+
+    # Map legacy audio_params keys to the codec's keyword args.
+    if output_format == "wav":
+        encode(audio, sr, path, bit_depth=audio_params.get("wav_bit_depth", "FLOAT"))
     elif output_format == "flac":
-        # PyAV's FLAC encoder only exposes a single "flac" codec in the current version.
-        # In the current version, without access to bits_per_raw_sample in PyAV, PCM_24 may still be encoded as 16-bit.
-        # Use soundfile to save 24-bit FLAC
-        codec = "flac"
-        if audio_params.get("flac_bit_depth", "PCM_24") == "PCM_24":
-            import soundfile as sf
-
-            return sf.write(path, audio_array, int(sr), format="FLAC", subtype="PCM_24")
+        encode(audio, sr, path, bit_depth=audio_params.get("flac_bit_depth", "PCM_24"))
+    elif output_format == "mp3":
+        encode(audio, sr, path, bit_rate=audio_params.get("mp3_bit_rate", "320k"))
+    elif output_format == "m4a":
+        encode(
+            audio, sr, path,
+            bit_rate=audio_params.get("m4a_bit_rate", "512k"),
+            codec=audio_params.get("m4a_codec", "aac"),
+            aac_at_quality=audio_params.get("m4a_aac_at_quality", 2),
+        )
+    elif output_format == "aac":
+        encode(audio, sr, path, bit_rate=audio_params.get("aac_bit_rate", "128k"))
     else:
-        wav_codecs = {"PCM_16": "pcm_s16le", "PCM_24": "pcm_s24le", "FLOAT": "pcm_f32le"}
-        codec = wav_codecs.get(audio_params.get("wav_bit_depth", "FLOAT"), wav_codecs["FLOAT"])
-
-    with av.open(path, "w") as container:
-        stream = container.add_stream(codec, rate=int(sr))
-        stream.layout = layout
-        if output_format == "mp3":
-            stream.bit_rate = _bitrate_to_int(audio_params.get("mp3_bit_rate", "320k"))
-        elif output_format == "m4a":
-            stream.bit_rate = _bitrate_to_int(audio_params.get("m4a_bit_rate", "512k"))
-            if codec == "aac_at":
-                stream.codec_context.options = {"aac_at_quality": str(audio_params.get("m4a_aac_at_quality", 2))}
-
-        frame = av.AudioFrame.from_ndarray(_format_audio(audio_array), format="fltp", layout=layout)
-        frame.sample_rate = int(sr)
-        for packet in stream.encode(frame):
-            container.mux(packet)
-        for packet in stream.encode():
-            container.mux(packet)
+        # opus / vorbis / ogg / any plugin-registered codec: no legacy params.
+        encode(audio, sr, path)

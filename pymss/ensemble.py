@@ -322,3 +322,21 @@ def save_ensemble_audio(
     output_format = output_format or output_path.suffix.lstrip(".").lower() or "wav"
     save_audio(str(output_path), result, sample_rate, output_format, audio_params or {})
     return output_path
+
+
+# Register the waveform-combination capability (reuses average_waveforms, no
+# reimplementation). Lazy import avoids a circular dependency at module load.
+def _register_ensemble_capability() -> None:
+    from .plugins.registry import _REGISTRY
+
+    if "ensemble" in _REGISTRY.capabilities and _REGISTRY.capabilities["ensemble"].source == "builtin":
+        return
+    _REGISTRY.register_capability(
+        "ensemble",
+        average_waveforms,
+        source="builtin",
+        description="combine source waveforms (8 algorithms: avg/median/min/max x wave/fft)",
+    )
+
+
+_register_ensemble_capability()

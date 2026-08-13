@@ -398,17 +398,19 @@ def _prepare_mix_channels(mix, is_stereo, logger):
 
     Returns:
         Any: Computed result."""
+    from .plugins.builtins import to_mono
+
     if is_stereo and len(mix.shape) == 1:
         logger.warning("Track is mono, but model is stereo, adding a second channel.")
         return np.stack([mix, mix], axis=0)
     if is_stereo and len(mix.shape) > 2:
         logger.warning("Track has more than 2 channels, taking mean of all channels and adding a second channel.")
-        mono = np.mean(mix, axis=0)
+        mono = to_mono(mix)
         return np.stack([mono, mono], axis=0)
     if not is_stereo:
         if len(mix.shape) != 1:
             logger.warning("Track has more than 1 channels, but model is mono, taking mean of all channels.")
-            return np.mean(mix, axis=0, keepdims=True)
+            return to_mono(mix)[None, :]
         return mix[None, :]
     return mix
 
@@ -426,11 +428,12 @@ def _standardize_mix(mix, enabled, logger):
     if not enabled:
         return mix, None
 
-    mono = mix.mean(0)
-    mean = mono.mean()
-    std = mono.std()
+    from .plugins.builtins import standardize
+
+    standardized, stats = standardize(mix)
+    mean, std = stats
     logger.debug(f"Standardize mix with mean: {mean}, std: {std}")
-    return (mix - mean) / std, (mean, std)
+    return standardized, stats
 
 
 def _normalize_outputs(results, enabled, logger, target_peak=OUTPUT_NORMALIZE_PEAK):
@@ -447,6 +450,8 @@ def _normalize_outputs(results, enabled, logger, target_peak=OUTPUT_NORMALIZE_PE
     if not enabled:
         return results
 
+    from .plugins.builtins import normalize_peak
+
     peak = max(
         (float(np.max(np.abs(np.asarray(audio)))) for audio in results.values() if np.asarray(audio).size),
         default=0.0,
@@ -455,9 +460,8 @@ def _normalize_outputs(results, enabled, logger, target_peak=OUTPUT_NORMALIZE_PE
         logger.debug("Skipping output normalize because peak is zero or not finite.")
         return results
 
-    gain = target_peak / peak
-    logger.debug(f"Normalize output stems with peak: {peak}, target_peak: {target_peak}, gain: {gain}")
-    return {stem: np.asarray(audio) * gain for stem, audio in results.items()}
+    logger.debug(f"Normalize output stems with peak: {peak}, target_peak: {target_peak}")
+    return {stem: normalize_peak(audio, target_peak=target_peak) for stem, audio in results.items()}
 
 
 def _destandardize(estimates, stats):
@@ -469,7 +473,11 @@ def _destandardize(estimates, stats):
 
     Returns:
         Any: Computed result."""
-    return estimates if stats is None else estimates * stats[1] + stats[0]
+    if stats is None:
+        return estimates
+    from .plugins.builtins import destandardize
+
+    return destandardize(estimates, stats)
 
 
 def _tta_variants(mix, use_tta, logger):

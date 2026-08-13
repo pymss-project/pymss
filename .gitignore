@@ -185,3 +185,9 @@ resources
 tmp
 all_models
 /mps/
+
+# local test artifacts
+testflow.json
+testflow_out/
+input.wav
+input2.wav
