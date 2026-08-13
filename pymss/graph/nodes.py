@@ -57,6 +57,7 @@ from .core import (
     parse_default_int,
     parse_device_ids,
     register_node,
+    register_alias,
     safe_filename_part,
     string_value,
     widget,
@@ -144,16 +145,20 @@ def _run_separation(
     model_audio = np.asarray(mix, dtype=np.float32)
 
     with torch.inference_mode(False):
-        with build_separator() as separator:
-            target_sr = int(getattr(separator, "config", None).audio.get("sample_rate", sample_rate)) if _has_config(separator) else sample_rate
-            if target_sr != sample_rate:
-                model_audio = _resample(model_audio, sample_rate, target_sr)
-                sample_rate = target_sr
-            try:
-                separator.progress_callback = _progress_for(ctx, node.id)
-            except Exception:  # pragma: no cover - attribute is settable in practice
-                pass
-            results = separator.separate(model_audio, pbar=False, stems=None)
+        # NOTE: do not use a ``with`` block here. The separator may be a shared,
+        # cached instance (SeparatorCache) whose lifetime spans the whole run;
+        # MSSeparator.__exit__ calls close(), which would destroy the config
+        # and break every subsequent node that reuses the cached instance.
+        separator = build_separator()
+        target_sr = int(getattr(separator, "config", None).audio.get("sample_rate", sample_rate)) if _has_config(separator) else sample_rate
+        if target_sr != sample_rate:
+            model_audio = _resample(model_audio, sample_rate, target_sr)
+            sample_rate = target_sr
+        try:
+            separator.progress_callback = _progress_for(ctx, node.id)
+        except Exception:  # pragma: no cover - attribute is settable in practice
+            pass
+        results = separator.separate(model_audio, pbar=False, stems=None)
 
     return {stem: np.asarray(arr, dtype=np.float32) for stem, arr in results.items()}
 
@@ -257,15 +262,22 @@ def _load_audio_signature(node: DAGNode) -> NodeSignature:
 def _execute_load_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
     from ..audio_io import load_audio
 
-    # Prefer the run-level input_path; fall back to the widget filename (which
-    # comfy-mss resolves against ComfyUI's input directory — we instead treat it
-    # as a path relative to cwd / the graph's directory).
-    raw_name = widget(node_data(ctx_node_of(ctx, "pymss_load_audio")).get("widgets_values"), 0, "")
-    del raw_name  # we always use ctx.input_path when present, mirroring studio behaviour
-    if ctx.input_path:
+    node = ctx_node_of(ctx, "pymss_load_audio")
+    widget_name = str(widget(node_data(node).get("widgets_values"), 0, "") or "").strip()
+    # Multi-input graphs name a specific file per load node (e.g. "input.wav",
+    # "input2.wav"); resolve it relative to cwd when it exists. Single-input
+    # graphs typically pass ``-i`` on the CLI and leave the widget as a placeholder,
+    # so we fall back to ``ctx.input_path`` in that case.
+    path = None
+    if widget_name and Path(widget_name).is_file():
+        path = widget_name
+    elif ctx.input_path:
         path = ctx.input_path
     else:
-        raise DAGError("pymss_load_audio needs an input path (pass input_path to run_dag)")
+        raise DAGError(
+            "pymss_load_audio needs an input path: either set the node's widget "
+            "to an existing file or pass input_path to run_dag"
+        )
     mix, sr = load_audio(path, sr=None, mono=False)
     name = Path(path).stem
     artifact = numpy_to_audio(np.asarray(mix, dtype=np.float32), int(sr), source_path=path)
@@ -345,11 +357,25 @@ def _execute_save_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
         raise DAGError("pymss_save_audio requires an AUDIO input")
 
     output_format = str(widget(widgets_values, 0, "wav") or "wav").lower()
-    output_folder = string_value(inputs.get("output_folder", StringArtifact(""))) or str(widget(widgets_values, 1, "Default") or "")
-    sample_rate_widget = str(widget(widgets_values, 2, "") or "")
-    wav_bit_depth = str(widget(widgets_values, 3, "FLOAT") or "FLOAT")
-    flac_bit_depth = str(widget(widgets_values, 4, "PCM_24") or "PCM_24")
-    mp3_bit_rate = str(widget(widgets_values, 5, "320k") or "320k")
+    # Two widget layouts exist in the wild:
+    #   comfy-mss upstream: [format, output_folder, sample_rate, wav_bd, flac_bd, mp3_br]
+    #   pymss-studio export: [format, sample_rate, wav_bd, flac_bd, mp3_br]  (no folder)
+    # Detect by checking whether widget[1] looks like a sample rate (pure int).
+    w1 = str(widget(widgets_values, 1, "") or "")
+    folder_from_input = string_value(inputs.get("output_folder", StringArtifact("")))
+    if w1.isdigit():
+        # pymss-studio layout: no output_folder widget.
+        output_folder = folder_from_input
+        sample_rate_widget = w1
+        wav_bit_depth = str(widget(widgets_values, 2, "FLOAT") or "FLOAT")
+        flac_bit_depth = str(widget(widgets_values, 3, "PCM_24") or "PCM_24")
+        mp3_bit_rate = str(widget(widgets_values, 4, "320k") or "320k")
+    else:
+        output_folder = folder_from_input or w1
+        sample_rate_widget = str(widget(widgets_values, 2, "") or "")
+        wav_bit_depth = str(widget(widgets_values, 3, "FLOAT") or "FLOAT")
+        flac_bit_depth = str(widget(widgets_values, 4, "PCM_24") or "PCM_24")
+        mp3_bit_rate = str(widget(widgets_values, 5, "320k") or "320k")
 
     audio_params = {
         **ctx.audio_params,
@@ -719,6 +745,9 @@ for _kind, _is_list in [
         signature=_separate_signature_factory(MSS_MAX_STEMS if _kind != "vr" else VR_MAX_STEMS, is_list=_is_list),
         execute=_execute_separate(_kind, is_list=_is_list),
     )
+    # comfy-mss upstream uses bare names (mss_separate, vr_separate, ...); some
+    # exported graphs carry a ``pymss_`` prefix. Register both so either runs.
+    register_alias(f"pymss_{_type}", _type)
 
 
 # ---------------------------------------------------------------------------

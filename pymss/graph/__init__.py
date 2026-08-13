@@ -36,6 +36,7 @@ from .core import (
     VR_PARAMS,
     get_node_type,
     register_node,
+    register_alias,
     run_dag,
     topological_order,
 )

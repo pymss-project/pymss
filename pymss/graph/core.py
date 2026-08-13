@@ -141,6 +141,22 @@ def register_node(node_type: str, *, signature: Callable[["DAGNode"], NodeSignat
     _REGISTRY[node_type] = NodeTypeInfo(type=node_type, signature=signature, execute=execute)
 
 
+def register_alias(alias: str, canonical: str) -> None:
+    """Register ``alias`` as another name for an already-registered ``canonical`` type.
+
+    comfy-mss graphs in the wild use inconsistent node-type naming: comfy-mss
+    upstream registers ``mss_separate``, but graphs exported from some
+    front-ends (e.g. pymss-studio drafts) carry a ``pymss_`` prefix
+    (``pymss_mss_separate``). Aliases let both run without duplicating
+    executors.
+    """
+
+    target = _REGISTRY.get(canonical)
+    if target is None:
+        raise KeyError(f"cannot alias {alias!r}: canonical type {canonical!r} is not registered")
+    _REGISTRY[alias] = NodeTypeInfo(type=alias, signature=target.signature, execute=target.execute)
+
+
 def get_node_type(node_type: str) -> NodeTypeInfo:
     _load_builtin_nodes()
     try:
@@ -282,7 +298,7 @@ class SeparatorCache:
     def _default_factory(**kwargs: Any) -> Any:
         # Mirrors pymss.workflow._default_separator_factory but kept local so
         # dag.py does not import workflow.py (workflow.py imports dag.py).
-        from .separator import MSSeparator
+        from ..separator import MSSeparator
 
         model_path = kwargs.pop("model_path", None)
         if model_path:
@@ -685,6 +701,7 @@ __all__ = [
     "parse_default_int",
     "parse_device_ids",
     "register_node",
+    "register_alias",
     "run_dag",
     "safe_filename_part",
     "string_value",

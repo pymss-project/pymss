@@ -30,12 +30,107 @@ from .core import (
     audio_to_numpy,
     numpy_to_audio,
     register_node,
+    safe_filename_part,
     string_value,
     widget,
 )
 
 
 OUTPUT_NODE_TYPES: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
+# ComfyUI native IO nodes (LoadAudio / SaveAudio / SaveAudioMP3 / SaveAudioOpus)
+# ---------------------------------------------------------------------------
+#
+# These are deprecated in ComfyUI in favor of SaveAudioAdvanced, but real-world
+# graphs still use them. We make them behave like the pymss equivalents:
+# ``LoadAudio`` reads ``ctx.input_path`` (same as pymss_load_audio), and the
+# ``SaveAudio*`` nodes write via pymss' save_audio with a format-appropriate
+# bitrate. They are registered as aliases where the widget layout matches; the
+# only real divergence is that ComfyUI ``SaveAudio*`` take ``filename_prefix``
+# rather than a per-file ``output_folder``, which we map onto the output dir.
+
+
+# LoadAudio behaves identically to pymss_load_audio (both load one file from
+# ctx.input_path and emit AUDIO + name). Register it as an alias.
+def _register_native_io_aliases() -> None:
+    """Alias ComfyUI native IO node types to the pymss equivalents."""
+
+    from .core import _REGISTRY, register_alias
+
+    if "pymss_load_audio" in _REGISTRY and "LoadAudio" not in _REGISTRY:
+        register_alias("LoadAudio", "pymss_load_audio")
+
+
+def _save_audio_signature(node: DAGNode) -> NodeSignature:
+    return NodeSignature(
+        inputs=[PortSpec(name="audio", type=AUDIO), PortSpec(name="filename_prefix", type=STRING)],
+        output_names=[], output_types=[], is_output_node=True,
+    )
+
+
+def _save_audio_mp3_signature(node: DAGNode) -> NodeSignature:
+    return NodeSignature(
+        inputs=[PortSpec(name="audio", type=AUDIO), PortSpec(name="filename_prefix", type=STRING), PortSpec(name="quality", type="COMBO")],
+        output_names=[], output_types=[], is_output_node=True,
+    )
+
+
+def _make_save_executor(fmt: str):
+    def _execute(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
+        return _save_with_prefix(ctx, inputs, fmt)
+    return _execute
+
+
+register_node("SaveAudio", signature=_save_audio_signature, execute=_make_save_executor("flac"))
+register_node("SaveAudioMP3", signature=_save_audio_mp3_signature, execute=_make_save_executor("mp3"))
+register_node("SaveAudioOpus", signature=_save_audio_mp3_signature, execute=_make_save_executor("opus"))
+OUTPUT_NODE_TYPES.update({"SaveAudio", "SaveAudioMP3", "SaveAudioOpus"})
+
+
+def _save_with_prefix(ctx: NodeContext, inputs: dict[str, Any], fmt: str) -> NodeResult:
+    """Shared executor for ComfyUI ``SaveAudio`` family.
+
+    ComfyUI stores a ``filename_prefix`` widget (e.g. ``"audio/ComfyUI"``) and
+    appends a counter. We honor the prefix as a subfolder + filename stem. Opus
+    is mapped to m4a (pymss has no opus encoder) to avoid silent failure.
+    """
+
+    from ..audio_io import save_audio
+
+    audio_input = inputs.get("audio")
+    if audio_input is None:
+        raise DAGError("SaveAudio requires an AUDIO input")
+    node = ctx.nodes_by_id[ctx.current_node_id]
+    widgets = node.data.get("widgets_values", [])
+    prefix = string_value(inputs.get("filename_prefix", StringArtifact(""))) or str(widget(widgets, 0, "audio") or "audio")
+    quality = str(widget(widgets, 1, "") or "")
+
+    target_fmt = "m4a" if fmt == "opus" else fmt
+    audio_params = dict(ctx.audio_params)
+    if fmt == "mp3" and quality in {"128k", "320k"}:
+        audio_params["mp3_bit_rate"] = quality
+
+    parts = prefix.replace("\\", "/").split("/")
+    folder = safe_filename_part("/".join(parts[:-1])) if len(parts) > 1 else ""
+    stem = safe_filename_part(parts[-1]) if parts[-1] else "audio"
+
+    target_dir = ctx.output_dir / folder if folder else ctx.output_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    audios = audio_input if isinstance(audio_input, list) else [audio_input]
+    saved: list[str] = []
+    for i, art in enumerate(audios):
+        if not isinstance(art, AudioArtifact):
+            raise DAGError("SaveAudio received non-AUDIO value")
+        suffix = f"_{i + 1}" if len(audios) > 1 else ""
+        path = target_dir / f"{stem}{suffix}.{target_fmt}"
+        arr = art.audio
+        save_arr = arr.T if arr.ndim == 2 else arr[:, None]
+        save_audio(str(path), np.asfortranarray(save_arr), art.sample_rate, target_fmt, audio_params)
+        saved.append(str(path))
+    return NodeResult(outputs={}, saved_paths=saved)
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +632,11 @@ def _exec_json_extract(ctx, inputs):
 
 
 register_node("JsonExtractString", signature=_sig_json_extract, execute=_exec_json_extract)
+
+
+# Register ComfyUI native IO aliases after all comfy-mss nodes are guaranteed
+# to exist (nodes.py is imported by core._load_builtin_nodes before this module).
+_register_native_io_aliases()
 
 
 __all__ = ["OUTPUT_NODE_TYPES"]
