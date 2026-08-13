@@ -298,7 +298,7 @@ def test_registry_entry_dict_parsing(monkeypatch, tmp_path):
         "mono": {"url": "https://example.com/mono.git", "subpath": "plugins/mono"},
     }
     monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake_registry)
-    monkeypatch.setattr(install_mod, "_clone", lambda url, dest, subpath=None: dest.mkdir(parents=True))
+    monkeypatch.setattr(install_mod, "_clone", lambda url, dest, subpath=None, ref=None: dest.mkdir(parents=True))
 
     plugins_dir = tmp_path / "p"
     # plain string entry
@@ -308,7 +308,7 @@ def test_registry_entry_dict_parsing(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr(
         install_mod, "_clone",
-        lambda url, dest, subpath=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
+        lambda url, dest, subpath=None, ref=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
     )
     r = install_mod.install("mono", plugins_dir=plugins_dir)
     assert captured["url"] == "https://example.com/mono.git"
@@ -337,7 +337,7 @@ def test_url_subpath_via_fragment(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr(
         install_mod, "_clone",
-        lambda url, dest, subpath=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
+        lambda url, dest, subpath=None, ref=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
     )
     r = install_mod.install(
         "https://github.com/xxx/repo#plugins/myplugin",
@@ -356,7 +356,7 @@ def test_url_subpath_via_argument(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr(
         install_mod, "_clone",
-        lambda url, dest, subpath=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
+        lambda url, dest, subpath=None, ref=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
     )
     r = install_mod.install(
         "https://github.com/xxx/repo",
@@ -374,7 +374,7 @@ def test_url_fragment_overrides_subpath_arg(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr(
         install_mod, "_clone",
-        lambda url, dest, subpath=None: captured.update(subpath=subpath) or dest.mkdir(parents=True),
+        lambda url, dest, subpath=None, ref=None: captured.update(subpath=subpath) or dest.mkdir(parents=True),
     )
     install_mod.install(
         "https://github.com/xxx/repo#frag/path",
@@ -408,3 +408,153 @@ def test_local_path_subpath_missing(tmp_path):
     repo.mkdir()
     with pytest.raises(InstallError, match="subpath.*not found"):
         plugin_install(str(repo), plugins_dir=tmp_path / "p", subpath="nope")
+
+
+# ---------------------------------------------------------------------------
+# Dependency detection and package-manager probing
+# ---------------------------------------------------------------------------
+
+
+def test_read_plugin_meta(tmp_path):
+    """_read_plugin_meta parses name/version/dependencies from pyproject.toml."""
+    from pymss.plugins.install import _read_plugin_meta
+
+    d = tmp_path / "p"
+    d.mkdir()
+    (d / "pyproject.toml").write_text(
+        '[project]\nname = "pymss-plugin-x"\nversion = "1.2.3"\n'
+        'dependencies = ["pymss", "numpy", "scipy>=1.10"]\n'
+    )
+    meta = _read_plugin_meta(d)
+    assert meta["name"] == "pymss-plugin-x"
+    assert meta["version"] == "1.2.3"
+    # pymss itself is filtered out of deps.
+    assert meta["dependencies"] == ["numpy", "scipy>=1.10"]
+
+
+def test_read_plugin_meta_no_pyproject(tmp_path):
+    """Missing pyproject.toml returns {} (not an error)."""
+    from pymss.plugins.install import _read_plugin_meta
+
+    d = tmp_path / "p"
+    d.mkdir()
+    assert _read_plugin_meta(d) == {}
+
+
+def test_detect_package_manager_returns_string():
+    """_detect_package_manager returns 'uv', 'pip', or None."""
+    from pymss.plugins.install import _detect_package_manager
+
+    pm = _detect_package_manager()
+    assert pm in ("uv", "pip", None)
+
+
+def test_install_dependencies_empty_is_noop(monkeypatch):
+    """An empty deps list calls nothing."""
+    from pymss.plugins import install as install_mod
+
+    called = []
+    monkeypatch.setattr(install_mod, "_detect_package_manager", lambda: "uv")
+    monkeypatch.setattr(install_mod.subprocess, "run", lambda *a, **k: called.append(a))
+    install_mod._install_dependencies([])
+    assert called == []
+
+
+# ---------------------------------------------------------------------------
+# Version pinning (@ref syntax)
+# ---------------------------------------------------------------------------
+
+
+def test_ref_split_from_name(monkeypatch, tmp_path):
+    """`name@ref` splits into arg=name, ref=ref before cloning."""
+    from pymss.plugins import install as install_mod
+
+    fake_registry = {"plain": {"url": "https://example.com/r.git"}}
+    monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake_registry)
+    captured = {}
+    monkeypatch.setattr(
+        install_mod, "_clone",
+        lambda url, dest, subpath=None, ref=None: captured.update(url=url, ref=ref) or dest.mkdir(parents=True),
+    )
+    monkeypatch.setattr(install_mod, "_install_dependencies", lambda deps: None)
+    r = install_mod.install("plain@v1.0.0", plugins_dir=tmp_path / "p")
+    assert captured["ref"] == "v1.0.0"
+
+
+def test_ref_not_split_for_local_path(tmp_path):
+    """Local paths containing @ (e.g. user dirs) are not split into ref."""
+    from pymss.plugins.install import install as plugin_install
+
+    # Create a dir whose absolute path could contain @ (we just test the no-split logic).
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.1"\n')
+    r = plugin_install(str(repo), plugins_dir=tmp_path / "p")
+    assert r.source == "path"
+
+
+# ---------------------------------------------------------------------------
+# Search and available listing
+# ---------------------------------------------------------------------------
+
+
+def test_search_available_matches(monkeypatch):
+    import pymss.plugins.install as install_mod
+    from pymss.plugins.install import search_available
+
+    fake = {
+        "_comment": "skip",
+        "loudnorm": {"url": "u", "description": "LUFS loudness", "tags": ["loudness"]},
+        "timing": {"url": "u", "description": "pitch shift"},
+    }
+    monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake)
+    results = search_available("loud")
+    assert len(results) == 1
+    assert results[0]["name"] == "loudnorm"
+
+
+def test_list_available_marks_installed(monkeypatch, tmp_path):
+    from pymss.plugins.install import list_available
+    import pymss.plugins.install as im
+
+    fake = {"x": {"url": "u"}}
+    monkeypatch.setattr(im, "_fetch_registry", lambda: fake)
+    monkeypatch.setattr(im, "get_plugins_dir", lambda: tmp_path)
+    # Nothing installed yet.
+    entries = list_available()
+    assert entries[0]["installed"] is False
+    # Now create it.
+    (tmp_path / "x").mkdir()
+    entries = list_available()
+    assert entries[0]["installed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Install manifest (for updates)
+# ---------------------------------------------------------------------------
+
+
+def test_install_writes_manifest(monkeypatch, tmp_path):
+    """install() writes .pymss-install.json with source/url/version."""
+    from pymss.plugins import install as install_mod
+    import json
+
+    fake = {"x": {"url": "https://example.com/r.git", "subpath": "p/x"}}
+    monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake)
+    monkeypatch.setattr(
+        install_mod, "_clone",
+        lambda url, dest, subpath=None, ref=None: (
+            dest.mkdir(parents=True, exist_ok=True),
+            (dest / "pyproject.toml").write_text(
+                '[project]\nname="x"\nversion="0.3"\n'
+            ),
+        ),
+    )
+    monkeypatch.setattr(install_mod, "_install_dependencies", lambda deps: None)
+    install_mod.install("x", plugins_dir=tmp_path)
+    manifest = json.loads((tmp_path / "x" / ".pymss-install.json").read_text())
+    assert manifest["name"] == "x"
+    assert manifest["version"] == "0.3"
+    assert manifest["source"] == "registry"
+    assert manifest["url"] == "https://example.com/r.git"
+    assert manifest["subpath"] == "p/x"

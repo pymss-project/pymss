@@ -143,11 +143,20 @@ def cmd_install(args):
     from .plugins.install import install as plugin_install, InstallError
 
     try:
-        result = plugin_install(args.target, subpath=getattr(args, "subpath", None))
+        result = plugin_install(
+            args.target,
+            subpath=getattr(args, "subpath", None),
+            no_deps=getattr(args, "no_deps", False),
+        )
     except InstallError as exc:
         print(f"pymss install: error: {exc}", file=sys.stderr)
         return 1
     print(f"Installed plugin '{result.name}' -> {result.path} (from {result.source})")
+    if result.version:
+        print(f"  version: {result.version}")
+    if result.dependencies_installed:
+        deps = ", ".join(result.dependencies_installed)
+        print(f"  dependencies installed: {deps}")
     print("It will be loaded on the next pymss run. Run `pymss plugins list` to verify.")
     return 0
 
@@ -166,24 +175,94 @@ def cmd_uninstall(args):
 
 
 def cmd_plugins(args):
-    """List installed plugins and their load status, or show the plugins dir."""
+    """Handle plugin subcommands: list / dir / available / search / update."""
     from .plugins import bootstrap, get_plugins_dir, get_last_report
+    from .plugins.install import (
+        list_available, search_available, list_installed,
+        check_update, update as plugin_update, InstallError,
+    )
 
-    if getattr(args, "plugins_command", None) == "dir":
+    cmd = getattr(args, "plugins_command", None) or "list"
+
+    if cmd == "dir":
         print(get_plugins_dir())
         return 0
 
-    # Default: list.
+    if cmd == "available":
+        try:
+            entries = list_available()
+        except InstallError as exc:
+            print(f"pymss plugins available: error: {exc}", file=sys.stderr)
+            return 1
+        if not entries:
+            print("Official registry is empty or unreachable.")
+            return 0
+        print(f"{len(entries)} plugin(s) in the official registry:")
+        print("")
+        for e in entries:
+            mark = "[installed]" if e.get("installed") else "           "
+            desc = e.get("description", "")
+            print(f"  {mark} {e['name']:<16} {desc}")
+        print("")
+        print("Install with: pymss install <name>")
+        return 0
+
+    if cmd == "search":
+        try:
+            entries = search_available(args.query)
+        except InstallError as exc:
+            print(f"pymss plugins search: error: {exc}", file=sys.stderr)
+            return 1
+        if not entries:
+            print(f"No plugins matched {args.query!r}.")
+            return 0
+        print(f"{len(entries)} plugin(s) matched {args.query!r}:")
+        print("")
+        for e in entries:
+            mark = "[installed]" if e.get("installed") else "           "
+            desc = e.get("description", "")
+            print(f"  {mark} {e['name']:<16} {desc}")
+        return 0
+
+    if cmd == "update":
+        try:
+            info = check_update(args.name)
+        except InstallError as exc:
+            print(f"pymss plugins update: error: {exc}", file=sys.stderr)
+            return 1
+        if info["up_to_date"]:
+            print(f"{args.name} is up to date (version {info['local_version']}).")
+            return 0
+        print(
+            f"Updating {args.name}: {info['local_version']} -> "
+            f"{info['remote_version']}"
+        )
+        try:
+            result = plugin_update(args.name)
+        except InstallError as exc:
+            print(f"pymss plugins update: error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Updated plugin '{result.name}' -> {result.path} (from {result.source})")
+        if result.version:
+            print(f"  version: {result.version}")
+        return 0
+
+    # Default: list installed.
     plugins_dir = get_plugins_dir()
     report = bootstrap()
+    installed = {e["name"]: e for e in list_installed()}
     print(f"Plugins directory: {plugins_dir}")
     if not report.results:
         print("No plugins installed.")
+        print("Browse with: pymss plugins available")
         return 0
     print("")
     for r in report.results:
         status = "OK" if r.loaded else f"FAILED ({r.error})"
-        print(f"  {r.name:<24} {status}")
+        meta = installed.get(r.name, {})
+        ver = meta.get("version") or "?"
+        src = meta.get("source") or "?"
+        print(f"  {r.name:<24} {status:<20} v{ver:<10} ({src})")
     failed = report.failed
     if failed:
         print(f"\n{len(failed)} plugin(s) failed to load.", file=sys.stderr)
@@ -576,6 +655,11 @@ def build_parser():
         default=None,
         help="Subdirectory inside the URL/path repo to install as the plugin.",
     )
+    install_parser.add_argument(
+        "--no-deps",
+        action="store_true",
+        help="Skip automatic installation of the plugin's Python dependencies.",
+    )
     install_parser.set_defaults(func=cmd_install)
 
     uninstall_parser = subparsers.add_parser(
@@ -596,6 +680,17 @@ def build_parser():
     )
     plugins_subparsers.add_parser("list", help="List installed plugins (default).")
     plugins_subparsers.add_parser("dir", help="Print the plugins directory path.")
+    plugins_subparsers.add_parser(
+        "available", help="List all plugins in the official registry."
+    )
+    search_parser = plugins_subparsers.add_parser(
+        "search", help="Search the official registry by name/description/tag."
+    )
+    search_parser.add_argument("query", help="Search query (case-insensitive substring).")
+    update_parser = plugins_subparsers.add_parser(
+        "update", help="Reinstall a plugin at its latest version."
+    )
+    update_parser.add_argument("name", help="Name of the installed plugin to update.")
     plugins_parser.set_defaults(func=cmd_plugins, plugins_command="list")
 
     # ==========================
