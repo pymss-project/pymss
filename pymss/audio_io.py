@@ -243,77 +243,38 @@ def save_audio(path, audio, sr, output_format, audio_params):
         ...     {"flac_bit_depth": "PCM_24"},
         ... )"""
     output_format = output_format.lower()
-    audio_array = np.asarray(audio)
-    layout = "stereo" if audio_array.ndim > 1 and audio_array.shape[1] == 2 else "mono"
 
-    # Opus only supports 8000/12000/16000/24000/48000 Hz. Resample to the nearest
-    # legal rate using librosa (already a pymss dependency) so callers can pass any sr.
-    _OPUS_RATES = (8000, 12000, 16000, 24000, 48000)
-    if output_format == "opus" and int(sr) not in _OPUS_RATES:
-        target_sr = min(_OPUS_RATES, key=lambda r: abs(r - int(sr)))
-        import librosa
-        audio_array = np.stack(
-            [librosa.resample(ch.astype(np.float32), orig_sr=int(sr), target_sr=target_sr)
-             for ch in (audio_array.T if audio_array.ndim == 2 else [audio_array])],
-            axis=1,
-        ) if audio_array.ndim == 2 else librosa.resample(audio_array.astype(np.float32), orig_sr=int(sr), target_sr=target_sr)
-        sr = target_sr
+    # Dispatch to the registered codec capability. Each format registers a
+    # f"{format}_encode" capability; this lets plugins add new formats without
+    # touching save_audio, and unknown formats raise CapabilityNotFound instead
+    # of silently falling through to wav.
+    from .plugins.codecs import register_builtin_codecs
+    from .plugins.registry import _REGISTRY
 
-    # soundfile-backed formats (lossless-ish container + native encoder):
-    # opus/vorbis go through libsndfile, which handles OGG encapsulation cleanly.
-    if output_format == "opus":
-        import soundfile as sf
-        sf.write(path, audio_array, int(sr), format="OGG", subtype="OPUS")
-        return
-    if output_format == "vorbis":
-        import soundfile as sf
-        sf.write(path, audio_array, int(sr), format="OGG", subtype="VORBIS")
-        return
-    if output_format == "ogg":  # alias: ogg defaults to vorbis inside the container
-        import soundfile as sf
-        sf.write(path, audio_array, int(sr), format="OGG", subtype="VORBIS")
-        return
+    register_builtin_codecs()  # idempotent
+    cap_name = f"{output_format}_encode"
+    if cap_name not in _REGISTRY.capabilities:
+        from .plugins.registry import CapabilityNotFound
 
-    if output_format == "mp3":
-        codec = "libmp3lame"
-    elif output_format == "m4a":
-        codec = audio_params.get("m4a_codec", "aac")
-    elif output_format == "aac":
-        # Raw AAC in ADTS container; use .aac extension. For .m4a use output_format="m4a".
-        codec = "aac"
+        raise CapabilityNotFound(cap_name)
+    encode = _REGISTRY.capabilities[cap_name].func
+
+    # Map legacy audio_params keys to the codec's keyword args.
+    if output_format == "wav":
+        encode(audio, sr, path, bit_depth=audio_params.get("wav_bit_depth", "FLOAT"))
     elif output_format == "flac":
-        # PyAV's FLAC encoder only exposes a single "flac" codec in the current version.
-        # In the current version, without access to bits_per_raw_sample in PyAV, PCM_24 may still be encoded as 16-bit.
-        # Use soundfile to save 24-bit FLAC
-        codec = "flac"
-        if audio_params.get("flac_bit_depth", "PCM_24") == "PCM_24":
-            import soundfile as sf
-
-            return sf.write(path, audio_array, int(sr), format="FLAC", subtype="PCM_24")
+        encode(audio, sr, path, bit_depth=audio_params.get("flac_bit_depth", "PCM_24"))
+    elif output_format == "mp3":
+        encode(audio, sr, path, bit_rate=audio_params.get("mp3_bit_rate", "320k"))
+    elif output_format == "m4a":
+        encode(
+            audio, sr, path,
+            bit_rate=audio_params.get("m4a_bit_rate", "512k"),
+            codec=audio_params.get("m4a_codec", "aac"),
+            aac_at_quality=audio_params.get("m4a_aac_at_quality", 2),
+        )
+    elif output_format == "aac":
+        encode(audio, sr, path, bit_rate=audio_params.get("aac_bit_rate", "128k"))
     else:
-        wav_codecs = {"PCM_16": "pcm_s16le", "PCM_24": "pcm_s24le", "FLOAT": "pcm_f32le"}
-        codec = wav_codecs.get(audio_params.get("wav_bit_depth", "FLOAT"), wav_codecs["FLOAT"])
-
-    # Container hint: aac goes into ADTS by default; m4a into mp4/m4a.
-    container_format = None
-    if output_format == "aac":
-        container_format = "adts"
-
-    with av.open(path, "w", format=container_format) as container:
-        stream = container.add_stream(codec, rate=int(sr))
-        stream.layout = layout
-        if output_format == "mp3":
-            stream.bit_rate = _bitrate_to_int(audio_params.get("mp3_bit_rate", "320k"))
-        elif output_format == "m4a":
-            stream.bit_rate = _bitrate_to_int(audio_params.get("m4a_bit_rate", "512k"))
-            if codec == "aac_at":
-                stream.codec_context.options = {"aac_at_quality": str(audio_params.get("m4a_aac_at_quality", 2))}
-        elif output_format == "aac":
-            stream.bit_rate = _bitrate_to_int(audio_params.get("aac_bit_rate", "128k"))
-
-        frame = av.AudioFrame.from_ndarray(_format_audio(audio_array), format="fltp", layout=layout)
-        frame.sample_rate = int(sr)
-        for packet in stream.encode(frame):
-            container.mux(packet)
-        for packet in stream.encode():
-            container.mux(packet)
+        # opus / vorbis / ogg / any plugin-registered codec: no legacy params.
+        encode(audio, sr, path)

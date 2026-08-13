@@ -59,6 +59,11 @@ from .workflow import WorkflowRunner, load_workflow_file, run_workflow_file, val
 from .plugins.builtins import register_builtin_capabilities as _register_builtin_caps
 
 _register_builtin_caps()
+# Register built-in codec capabilities (wav/flac/mp3/m4a/aac/opus/vorbis/ogg)
+# so require_capability('opus_encode') etc. work without first calling save_audio.
+from .plugins.codecs import register_builtin_codecs as _register_builtin_codecs
+
+_register_builtin_codecs()
 
 __all__ = (
     "MSSeparator",
