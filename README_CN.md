@@ -145,19 +145,34 @@ pymss serve --webui
 
 pymss 有插件系统，用于扩展能力——音频 DSP 操作、音频编解码器、以及工作流节点。内置功能（23 个能力：15 个 DSP/声道操作 + 8 个编解码器）和插件用的是同一套注册机制，核心与扩展共用同一个能力池。
 
-**安装插件：**
+**安装插件** —— 可用官方目录名、git URL 或本地路径。在 URL 后加 `#子目录` 可从 monorepo 子目录安装；用 `@tag` 锁定版本：
 
 ```sh
-pymss install my-plugin        # 按官方目录名（见 pymss-plugins 仓库）
-pymss install https://github.com/xxx/pymss-dsp-eq   # 按 git URL
-pymss install ./my-local-plugin   # 按本地路径
-pymss plugins list                # 查看已安装插件及加载状态
-pymss uninstall my-plugin
+pymss install loudnorm                                   # 按官方目录名
+pymss install "https://github.com/xxx/repo#plugins/eq"   # URL + 子目录
+pymss install https://github.com/xxx/repo --subpath plugins/eq
+pymss install ./my-local-plugin
+pymss install loudnorm@v0.2.0                            # 锁定 git tag/branch/commit
 ```
 
-插件放在 `~/.pymss/plugins/`（可用 `PYMSS_PLUGINS_DIR` 覆盖）。单个插件加载失败不会影响其他插件。官方插件目录是一个独立的 `pymss-plugins` 仓库（里面的 `registry.json` 映射短名到 git URL）；可通过 `PYMSS_PLUGINS_REGISTRY` 指向自定义目录。
+插件的依赖（在其 `pyproject.toml` 里声明）会**自动安装**到当前环境——venv 由 uv 管理时用 uv，否则用 pip。加 `--no-deps` 可跳过。
 
-**编写插件** —— 注册一个能力，pymss 会让它对 Python API、CLI 和工作流节点都可用：
+**管理插件：**
+
+```sh
+pymss plugins list           # 已装插件：版本、来源、加载状态
+pymss plugins available      # 浏览官方插件目录
+pymss plugins search loudness   # 按名称/描述/标签搜索目录
+pymss plugins update loudnorm   # 重装为最新版本
+pymss uninstall loudnorm
+pymss plugins dir            # 打印插件目录
+```
+
+`update` 对**官方插件和第三方（URL/路径装的）插件完全一样**——pymss 会记录每次安装的来源，所以更新时只需用插件文件夹名。
+
+插件放在 `~/.pymss/plugins/`（可用 `PYMSS_PLUGINS_DIR` 覆盖）。单个插件加载失败不会影响其他插件。官方插件目录是一个独立的 `pymss-plugins` 仓库（里面的 `registry.json` 映射短名到来源）；可通过 `PYMSS_PLUGINS_REGISTRY` 指向自定义目录。
+
+**编写插件** —— 只需标准的 `pyproject.toml`（带 `[project].name`/`version`/`dependencies`），无需任何 pymss 专属字段。注册一个能力，pymss 会让它对 Python API、CLI 和工作流节点都可用：
 
 ```python
 from pymss.plugins import register_capability, register_node, register_cli

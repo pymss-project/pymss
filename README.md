@@ -146,19 +146,34 @@ See [server CLI docs](./docs/server/cli.md), [server API docs](./docs/server/api
 
 pymss has a plugin system for extending capabilities — audio DSP operations, audio codecs, and workflow nodes. Built-in functionality (23 capabilities: 15 DSP/channel ops + 8 codecs) is registered through the same mechanism plugins use, so core and extensions share one pool.
 
-**Install a plugin:**
+**Install a plugin** — by official registry name, git URL, or local path. Append `#subdir` to install from a monorepo subdirectory; pin a version with `@tag`:
 
 ```sh
-pymss install my-plugin        # by official registry name (see pymss-plugins repo)
-pymss install https://github.com/xxx/pymss-dsp-eq   # by git URL
-pymss install ./my-local-plugin   # by local path
-pymss plugins list                # show installed plugins + load status
-pymss uninstall my-plugin
+pymss install loudnorm                                   # by official registry name
+pymss install "https://github.com/xxx/repo#plugins/eq"   # URL + subdirectory
+pymss install https://github.com/xxx/repo --subpath plugins/eq
+pymss install ./my-local-plugin
+pymss install loudnorm@v0.2.0                            # pin a git tag/branch/commit
 ```
 
-Plugins live in `~/.pymss/plugins/` (override with `PYMSS_PLUGINS_DIR`). A single plugin failing to load never blocks others. The official plugin registry is a separate `pymss-plugins` repo (a `registry.json` mapping short names to git URLs) — point `pymss install <name>` at a custom one via `PYMSS_PLUGINS_REGISTRY`.
+Plugin dependencies (declared in its `pyproject.toml`) are **installed automatically** into the current environment — uv is used when the venv is uv-managed, pip otherwise. Pass `--no-deps` to skip.
 
-**Write a plugin** — register a capability, and pymss makes it available to the Python API, the CLI, and workflow nodes:
+**Manage plugins:**
+
+```sh
+pymss plugins list           # installed plugins: version, source, load status
+pymss plugins available      # browse the official registry
+pymss plugins search loudness   # search the registry by name/description/tag
+pymss plugins update loudnorm   # reinstall a plugin at its latest version
+pymss uninstall loudnorm
+pymss plugins dir            # print the plugins directory
+```
+
+`update` works identically for **official and third-party (URL/path-installed) plugins** — pymss records each install's provenance, so you only ever refer to a plugin by its folder name.
+
+Plugins live in `~/.pymss/plugins/` (override with `PYMSS_PLUGINS_DIR`). A single plugin failing to load never blocks others. The official plugin registry is a separate `pymss-plugins` repo (a `registry.json` mapping short names to sources) — point `pymss install <name>` at a custom one via `PYMSS_PLUGINS_REGISTRY`.
+
+**Write a plugin** — a standard `pyproject.toml` with `[project].name`/`version`/`dependencies` is all pymss needs (no pymss-specific fields). Register a capability and pymss makes it available to the Python API, the CLI, and workflow nodes:
 
 ```python
 from pymss.plugins import register_capability, register_node, register_cli
