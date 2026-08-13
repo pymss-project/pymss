@@ -9,7 +9,7 @@ from .model_download import download_all, download_model
 from .model_registry import create_separator, list_models, register_model, resolve_model, unregister_model
 from .progress import _CliInferenceProgress
 from .user_models import KNOWN_MODEL_TYPES, list_user_models
-from .workflow import load_workflow_file, run_workflow_file, validate_workflow, write_workflow_template
+from .workflow import load_workflow_file, validate_workflow, write_workflow_template
 
 warnings.filterwarnings("ignore", category=UserWarning)
 

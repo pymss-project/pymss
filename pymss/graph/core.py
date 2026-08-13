@@ -626,15 +626,6 @@ class DAG:
     nodes: list[DAGNode] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
 
-    def node(self, node_id: object) -> DAGNode:
-        for node in self.graph_nodes:
-            if node.id == node_id:
-                return node
-        raise KeyError(node_id)
-
-    # Alias retained for clarity in executor code.
-    graph_nodes = property(lambda self: self.nodes)
-
 
 # Filled in by ``_load_builtin_nodes``. Kept as a module-level set so loaders
 # can classify nodes without poking the registry directly.

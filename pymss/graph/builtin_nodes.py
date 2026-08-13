@@ -237,13 +237,9 @@ def _audio_waveform(audio: Any) -> tuple[np.ndarray, int]:
     return np.asarray(arr, dtype=np.float32), int(sr)
 
 
-def _resample(audio: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
-    if src_sr == dst_sr or audio.size == 0:
-        return audio
-    # Use the built-in resample capability (librosa-based); no torchaudio.
-    from ..plugins.builtins import resample
-
-    return resample(audio, src_sr, dst_sr)
+# Reuse the resample helper from nodes (avoids duplicating the librosa-backed
+# implementation). AudioMerge needs it to align inputs at different sample rates.
+from .nodes import _resample
 
 
 def _match_sample_rates(a: np.ndarray, sr_a: int, b: np.ndarray, sr_b: int) -> tuple[np.ndarray, np.ndarray, int]:

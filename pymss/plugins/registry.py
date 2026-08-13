@@ -54,8 +54,7 @@ class NodeRegistration:
 
     For graph/workflow nodes, `signature` is a factory that takes a DAGNode and
     returns a NodeSignature (inputs/outputs/params). It is optional — simple
-    plugin nodes may omit it. `extra` carries any additional per-node metadata
-    the executor needs.
+    plugin nodes may omit it.
     """
 
     node_type: str
@@ -63,7 +62,6 @@ class NodeRegistration:
     source: str = "builtin"  # which plugin/package provided it
     description: str = ""
     signature: Callable[..., Any] | None = None  # (dag_node) -> NodeSignature
-    extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -137,7 +135,6 @@ class PluginRegistry:
         description: str = "",
         allow_override_builtin: bool = False,
         signature: Callable[..., Any] | None = None,
-        extra: dict | None = None,
     ) -> None:
         if node_type in self._reserved_node_types and not allow_override_builtin:
             raise ValueError(
@@ -153,7 +150,7 @@ class PluginRegistry:
             )
         self.nodes[node_type] = NodeRegistration(
             node_type=node_type, func=func, source=source, description=description,
-            signature=signature, extra=extra or {},
+            signature=signature,
         )
 
     def get_node(self, node_type: str) -> Callable[..., Any] | None:
@@ -229,24 +226,22 @@ def register_node(
     source: str = "plugin",
     description: str = "",
     signature: Callable[..., Any] | None = None,
-    extra: dict | None = None,
 ):
     """Register a workflow node executor. See register_capability for decorator use.
 
     signature: optional factory (dag_node) -> NodeSignature for graph nodes.
-    extra: optional per-node metadata dict consumed by the executor.
     """
     if func is None:
         def decorator(f: Callable[..., Any]):
             _REGISTRY.register_node(
                 node_type, f, source=source, description=description,
-                signature=signature, extra=extra or {},
+                signature=signature,
             )
             return f
         return decorator
     _REGISTRY.register_node(
         node_type, func, source=source, description=description,
-        signature=signature, extra=extra or {},
+        signature=signature,
     )
     return func
 
