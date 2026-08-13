@@ -126,6 +126,14 @@ All comfy-mss node types are supported: `pymss_load_audio`(_batch),
 node types are rejected by default; pass `--no-strict` to skip them with a
 warning.
 
+Useful ComfyUI built-in audio and string nodes are also reimplemented (no
+ComfyUI needed): `TrimAudioDuration`, `AudioConcat`, `AudioMerge`,
+`AudioAdjustVolume`, `SplitAudioChannels`, `JoinAudioChannels`, `EmptyAudio`,
+`AudioEqualizer3Band`, and the string nodes `StringSubstring`, `StringReplace`,
+`StringTrim`, `CaseConverter`, `StringFormat`, `RegexReplace`, `RegexExtract`,
+`JsonExtractString`. VAE/latent/generation nodes are intentionally omitted as
+they are not relevant to MSS workflows.
+
 The `workflow run` and `comfy run` commands share the same DAG execution core,
 so YAML workflows and comfy-mss JSON graphs behave identically for the node
 types they have in common.

@@ -709,9 +709,11 @@ def _load_builtin_nodes() -> None:
     global _builtins_loaded
     if _builtins_loaded:
         return
-    from . import nodes  # noqa: F401  (side-effect: registers nodes)
+    from . import nodes  # noqa: F401  (side-effect: registers comfy-mss nodes)
+    from . import builtin_nodes  # noqa: F401  (side-effect: registers ComfyUI built-in nodes)
 
     OUTPUT_NODE_TYPES.update(nodes.OUTPUT_NODE_TYPES)
+    OUTPUT_NODE_TYPES.update(builtin_nodes.OUTPUT_NODE_TYPES)
     _builtins_loaded = True
 
 

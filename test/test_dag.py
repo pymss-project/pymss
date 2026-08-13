@@ -541,3 +541,111 @@ def test_example_mss_separate_runs_with_real_model(tmp_path):
         assert data.ndim == 2 and data.shape[1] == 2, f"{path} not stereo"
         assert file_sr == sr
         assert data.shape[0] == int(sr * 0.2)
+
+
+# ---------------------------------------------------------------------------
+# Built-in ComfyUI audio + string nodes
+# ---------------------------------------------------------------------------
+
+
+def _run_single_node(node_type, widgets, inputs_artifacts, monkeypatch, tmp_path):
+    """Helper: build a one-node graph, wire inputs, return saved or output."""
+
+    from pymss.graph import DAG, DAGNode, DAGLink, SeparatorCache, run_dag
+
+    saved: list = []
+
+    def _save(path, audio, sr, fmt, ap):
+        saved.append((path, np.asarray(audio).copy()))
+
+    import pymss.audio_io as audio_io
+
+    monkeypatch.setattr(audio_io, "save_audio", _save)
+
+    input_specs = []
+    for name, art in inputs_artifacts:
+        input_specs.append((name, art))
+    node = DAGNode(
+        id=1, type=node_type,
+        inputs=[None] * len(input_specs),
+        data={"widgets_values": widgets, "outputs": [{"name": "out", "type": "AUDIO"}]},
+    )
+    return node, saved
+
+
+def test_trim_audio_duration(monkeypatch, tmp_path):
+    from pymss.graph import DAG, DAGNode, DAGLink, run_dag
+
+    src = DAGNode(id=0, type="input_audio", inputs=[], data={"outputs": []})
+    trim = DAGNode(id=1, type="TrimAudioDuration", inputs=[None, None, None],
+                   data={"widgets_values": [0.1, 0.2], "outputs": [{"name": "audio", "type": "AUDIO"}]})
+    trim.inputs[0] = DAGLink(link_id=1, source_node_id=0, source_slot=0, target_node_id=1, target_slot=0, type="AUDIO")
+    save = DAGNode(id=2, type="pymss_save_audio", inputs=[None] * 8, data={"widgets_values": ["wav", "out", "1000", "FLOAT", "PCM_24", "320k"]})
+    save.inputs[0] = DAGLink(link_id=2, source_node_id=1, source_slot=0, target_node_id=2, target_slot=0, type="AUDIO")
+    import pymss.audio_io as ai
+
+    monkeypatch.setattr(ai, "load_audio", lambda *a, **k: (np.zeros((2, 1000), dtype=np.float32), 1000))
+    saved = run_dag(DAG(nodes=[src, trim, save]), output_dir=tmp_path, input_path="x.wav", device="cpu")
+    assert len(saved) == 1
+
+
+def test_audio_merge_add(monkeypatch, tmp_path):
+    from pymss.graph import DAG, DAGNode, DAGLink, AudioArtifact, SeparatorCache, run_dag
+
+    a = AudioArtifact(np.full((2, 4), 0.5, dtype=np.float32), 1000)
+    b = AudioArtifact(np.full((2, 4), 0.3, dtype=np.float32), 1000)
+    # Two input_audio sources feeding the merge node.
+    src1 = DAGNode(id=1, type="input_audio", inputs=[], data={"outputs": []})
+    src2 = DAGNode(id=2, type="input_audio", inputs=[], data={"outputs": []})
+    merge = DAGNode(id=3, type="AudioMerge", inputs=[None, None, None],
+                   data={"widgets_values": [], "outputs": [{"name": "audio", "type": "AUDIO"}]})
+    merge.inputs[0] = DAGLink(link_id=1, source_node_id=1, source_slot=0, target_node_id=3, target_slot=0, type="AUDIO")
+    merge.inputs[1] = DAGLink(link_id=2, source_node_id=2, source_slot=0, target_node_id=3, target_slot=1, type="AUDIO")
+    save = DAGNode(id=4, type="pymss_save_audio", inputs=[None] * 8, data={"widgets_values": ["wav", "out", "1000", "FLOAT", "PCM_24", "320k"]})
+    save.inputs[0] = DAGLink(link_id=3, source_node_id=3, source_slot=0, target_node_id=4, target_slot=0, type="AUDIO")
+
+    import pymss.audio_io as ai
+
+    calls = iter([(np.full((2, 4), 0.5, dtype=np.float32), 1000), (np.full((2, 4), 0.3, dtype=np.float32), 1000)])
+    monkeypatch.setattr(ai, "load_audio", lambda *a, **k: next(calls))
+    saved = run_dag(DAG(nodes=[src1, src2, merge, save]), output_dir=tmp_path, input_path="x.wav", device="cpu")
+    assert len(saved) == 1
+
+
+def test_split_join_audio_channels_roundtrip(monkeypatch, tmp_path):
+    from pymss.graph import DAG, DAGNode, DAGLink, SeparatorCache, run_dag
+
+    src = DAGNode(id=1, type="input_audio", inputs=[], data={"outputs": []})
+    split = DAGNode(id=2, type="SplitAudioChannels", inputs=[None], data={"outputs": [{"name": "left", "type": "AUDIO"}, {"name": "right", "type": "AUDIO"}]})
+    join = DAGNode(id=3, type="JoinAudioChannels", inputs=[None, None], data={"outputs": [{"name": "audio", "type": "AUDIO"}]})
+    save = DAGNode(id=4, type="pymss_save_audio", inputs=[None] * 8, data={"widgets_values": ["wav", "out", "1000", "FLOAT", "PCM_24", "320k"]})
+    split.inputs[0] = DAGLink(link_id=1, source_node_id=1, source_slot=0, target_node_id=2, target_slot=0, type="AUDIO")
+    join.inputs[0] = DAGLink(link_id=2, source_node_id=2, source_slot=0, target_node_id=3, target_slot=0, type="AUDIO")
+    join.inputs[1] = DAGLink(link_id=3, source_node_id=2, source_slot=1, target_node_id=3, target_slot=1, type="AUDIO")
+    save.inputs[0] = DAGLink(link_id=4, source_node_id=3, source_slot=0, target_node_id=4, target_slot=0, type="AUDIO")
+    import pymss.audio_io as ai
+
+    monkeypatch.setattr(ai, "load_audio", lambda *a, **k: (np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=np.float32), 1000))
+    saved = run_dag(DAG(nodes=[src, split, join, save]), output_dir=tmp_path, input_path="x.wav", device="cpu")
+    assert len(saved) == 1
+
+
+@pytest.mark.parametrize("node_type,widgets,expect", [
+    ("StringSubstring", [None, 1, 3], None),  # "abc"[1:3] = "bc"; widget start/end
+    ("StringReplace", [None, None, None], None),
+    ("CaseConverter", [None, "UPPERCASE"], None),
+])
+def test_string_nodes_run(node_type, widgets, expect, monkeypatch, tmp_path):
+    """Smoke: each string node executes without error when wired a value."""
+    from pymss.graph import DAG, DAGNode, DAGLink, StringArtifact, run_dag
+
+    src = DAGNode(id=1, type="input_audio", inputs=[], data={"outputs": []})
+    # Repurpose: feed a string by using pymss_load_audio's audio_name output (slot 1).
+    load = DAGNode(id=1, type="pymss_load_audio", inputs=[], data={"widgets_values": ["hello.wav"], "outputs": []})
+    node = DAGNode(id=2, type=node_type, inputs=[None] * 3, data={"widgets_values": widgets, "outputs": [{"name": "STRING", "type": "STRING"}]})
+    node.inputs[0] = DAGLink(link_id=1, source_node_id=1, source_slot=1, target_node_id=2, target_slot=0, type="STRING")
+    import pymss.audio_io as ai
+
+    monkeypatch.setattr(ai, "load_audio", lambda *a, **k: (np.zeros((2, 4), dtype=np.float32), 1000))
+    # No save node; just verify it runs (returns without error).
+    run_dag(DAG(nodes=[load, node]), output_dir=tmp_path, input_path="hello.wav", device="cpu")

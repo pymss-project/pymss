@@ -123,6 +123,13 @@ pymss comfy run -c workflow.json -i input.wav -o results --download
 `PreviewAudio`（空操作）和 `StringConcatenate`（用于拼接文件名）。未识别的节点
 类型默认会报错；传 `--no-strict` 可跳过并警告。
 
+同时重新实现了有用的 ComfyUI 自带音频与字符串节点（无需 ComfyUI）：
+`TrimAudioDuration`、`AudioConcat`、`AudioMerge`、`AudioAdjustVolume`、
+`SplitAudioChannels`、`JoinAudioChannels`、`EmptyAudio`、`AudioEqualizer3Band`，
+以及字符串节点 `StringSubstring`、`StringReplace`、`StringTrim`、
+`CaseConverter`、`StringFormat`、`RegexReplace`、`RegexExtract`、
+`JsonExtractString`。VAE/latent/生成类节点与 MSS 无关，故未纳入。
+
 `workflow run` 与 `comfy run` 共用同一套 DAG 执行核心，因此 YAML 工作流与
 comfy-mss JSON 图在共有节点类型上的行为完全一致。
 
