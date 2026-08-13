@@ -19,6 +19,9 @@ Capability registry (flat, no categories):
     trim            (audio, sr, start, duration) -> audio
     concat          (audios) -> audio
     mix             (audios, mode) -> audio   (add/mean/subtract)
+    empty_audio     (duration, sr, channels) -> silent audio
+    eq              (audio, sr, low/mid/high gain+freq+q) -> audio (biquad)
+    resample        (audio, orig_sr, target_sr) -> audio
     ensemble        (pred_track_3d, weights, algorithm) -> audio
 
 All audio arrays are numpy float32, channel-first: shape (channels, samples)
@@ -185,6 +188,113 @@ def mix(audios, sample_rate=None, mode: str = "add") -> np.ndarray:
     raise ValueError(f"unknown mix mode: {mode}")
 
 
+def empty_audio(duration: float, sample_rate: float, channels: int = 2) -> np.ndarray:
+    """Generate silent audio of a given duration. channel-first (channels, samples)."""
+    n_samples = int(duration * sample_rate)
+    if channels <= 1:
+        return np.zeros(n_samples, dtype=np.float32)
+    return np.zeros((channels, n_samples), dtype=np.float32)
+
+
+# Audio EQ Cookbook (Robert Bristow-Johnson) biquad coefficient helpers.
+# These are the standard formulas behind torchaudio.functional.bass_biquad /
+# equalizer_biquad / treble_biquad, implemented with scipy.signal (already a
+# pymss dependency via librosa) so no torchaudio is needed.
+
+
+def _low_shelf_coeffs(freq, gain_db, sr, q=0.707):
+    A = 10 ** (gain_db / 40.0)
+    w0 = 2 * np.pi * freq / sr
+    alpha = np.sin(w0) / (2 * q)
+    cosw = np.cos(w0)
+    sqA = np.sqrt(A)
+    b0 = A * ((A + 1) - (A - 1) * cosw + 2 * sqA * alpha)
+    b1 = 2 * A * ((A - 1) - (A + 1) * cosw)
+    b2 = A * ((A + 1) - (A - 1) * cosw - 2 * sqA * alpha)
+    a0 = (A + 1) + (A - 1) * cosw + 2 * sqA * alpha
+    a1 = -2 * ((A - 1) + (A + 1) * cosw)
+    a2 = (A + 1) + (A - 1) * cosw - 2 * sqA * alpha
+    return [b0 / a0, b1 / a0, b2 / a0], [1.0, a1 / a0, a2 / a0]
+
+
+def _high_shelf_coeffs(freq, gain_db, sr, q=0.707):
+    A = 10 ** (gain_db / 40.0)
+    w0 = 2 * np.pi * freq / sr
+    alpha = np.sin(w0) / (2 * q)
+    cosw = np.cos(w0)
+    sqA = np.sqrt(A)
+    b0 = A * ((A + 1) + (A - 1) * cosw + 2 * sqA * alpha)
+    b1 = -2 * A * ((A - 1) + (A + 1) * cosw)
+    b2 = A * ((A + 1) + (A - 1) * cosw - 2 * sqA * alpha)
+    a0 = (A + 1) - (A - 1) * cosw + 2 * sqA * alpha
+    a1 = 2 * ((A - 1) - (A + 1) * cosw)
+    a2 = (A + 1) - (A - 1) * cosw - 2 * sqA * alpha
+    return [b0 / a0, b1 / a0, b2 / a0], [1.0, a1 / a0, a2 / a0]
+
+
+def _peaking_coeffs(freq, gain_db, sr, q):
+    A = 10 ** (gain_db / 40.0)
+    w0 = 2 * np.pi * freq / sr
+    alpha = np.sin(w0) / (2 * q)
+    cosw = np.cos(w0)
+    b0 = 1 + alpha * A
+    b1 = -2 * cosw
+    b2 = 1 - alpha * A
+    a0 = 1 + alpha / A
+    a1 = -2 * cosw
+    a2 = 1 - alpha / A
+    return [b0 / a0, b1 / a0, b2 / a0], [1.0, a1 / a0, a2 / a0]
+
+
+def eq(
+    audio,
+    sample_rate: float,
+    low_gain_db: float = 0.0, low_freq: int = 100,
+    mid_gain_db: float = 0.0, mid_freq: int = 1000, mid_q: float = 0.707,
+    high_gain_db: float = 0.0, high_freq: int = 5000,
+) -> np.ndarray:
+    """3-band equalizer (low shelf / peaking / high shelf) via biquad filters.
+
+    Equivalent to ComfyUI's AudioEqualizer3Band (same parameters), implemented
+    with scipy.signal.lfilter so no torchaudio dependency is needed.
+    Audio is channel-first (channels, samples) or 1-D mono.
+    """
+    from scipy.signal import lfilter
+
+    audio = np.asarray(audio, dtype=np.float32)
+    out = audio
+    if low_gain_db != 0:
+        b, a = _low_shelf_coeffs(low_freq, low_gain_db, sample_rate)
+        out = lfilter(b, a, out, axis=-1)
+    if mid_gain_db != 0:
+        b, a = _peaking_coeffs(mid_freq, mid_gain_db, sample_rate, mid_q)
+        out = lfilter(b, a, out, axis=-1)
+    if high_gain_db != 0:
+        b, a = _high_shelf_coeffs(high_freq, high_gain_db, sample_rate)
+        out = lfilter(b, a, out, axis=-1)
+    return np.asarray(out, dtype=np.float32)
+
+
+def resample(audio, orig_sr: float, target_sr: float) -> np.ndarray:
+    """Resample audio between sample rates using librosa (already a dependency).
+
+    Audio is channel-first (channels, samples) or 1-D mono. Returns the same
+    layout at the target sample rate.
+    """
+    import librosa
+
+    audio = np.asarray(audio, dtype=np.float32)
+    if int(orig_sr) == int(target_sr):
+        return audio
+    if audio.ndim == 1:
+        return librosa.resample(audio, orig_sr=int(orig_sr), target_sr=int(target_sr))
+    # channel-first: resample each channel, pad to equal length
+    channels = [librosa.resample(audio[i], orig_sr=int(orig_sr), target_sr=int(target_sr)) for i in range(audio.shape[0])]
+    maxlen = max(ch.shape[-1] for ch in channels)
+    padded = np.stack([np.pad(ch, (0, maxlen - ch.shape[-1])) for ch in channels], axis=0)
+    return padded
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -210,6 +320,9 @@ def register_builtin_capabilities() -> None:
         "trim": (trim, "trim by start time and duration"),
         "concat": (concat, "concatenate audios end-to-end"),
         "mix": (mix, "sample-wise combine (add/mean/subtract/min/max)"),
+        "empty_audio": (empty_audio, "generate silent audio of a given duration"),
+        "eq": (eq, "3-band equalizer (biquad, scipy-backed)"),
+        "resample": (resample, "resample between sample rates (librosa)"),
     }
     for name, (func, desc) in caps.items():
         if name in _REGISTRY.capabilities and _REGISTRY.capabilities[name].source == "builtin":
@@ -229,5 +342,8 @@ __all__ = [
     "trim",
     "concat",
     "mix",
+    "empty_audio",
+    "eq",
+    "resample",
     "register_builtin_capabilities",
 ]

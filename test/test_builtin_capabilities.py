@@ -166,3 +166,64 @@ def test_ensemble_registered_as_capability():
     reg = get_registry()
     assert "ensemble" in reg.capabilities
     assert reg.capabilities["ensemble"].source == "builtin"
+
+
+# ---------------------------------------------------------------------------
+# empty_audio / eq / resample (new builtins)
+# ---------------------------------------------------------------------------
+
+
+def test_empty_audio_stereo():
+    out = require_capability("empty_audio")(duration=1.0, sample_rate=44100, channels=2)
+    assert out.shape == (2, 44100)
+    assert np.all(out == 0)
+
+
+def test_empty_audio_mono():
+    out = require_capability("empty_audio")(duration=0.5, sample_rate=8000, channels=1)
+    assert out.shape == (4000,)
+
+
+def test_resample_changes_length():
+    a = np.random.randn(2, 44100).astype(np.float32)
+    out = require_capability("resample")(a, 44100, 16000)
+    assert out.shape[0] == 2
+    assert abs(out.shape[1] - 16000) < 100  # ~1s at 16kHz
+
+
+def test_resample_same_sr_passthrough():
+    a = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    out = require_capability("resample")(a, 44100, 44100)
+    assert np.allclose(out, a)
+
+
+def test_eq_low_boost_increases_low_energy():
+    """Boosting low band should increase low-frequency content."""
+    sr = 44100
+    t = np.linspace(0, 1, sr, False)
+    sig = (0.3 * np.sin(2 * np.pi * 100 * t) + 0.3 * np.sin(2 * np.pi * 5000 * t)).astype(np.float32)
+
+    out = require_capability("eq")(sig, sr, low_gain_db=12.0, low_freq=100)
+
+    # Low-band energy ratio should go up after low-shelf boost.
+    def lowband_ratio(x):
+        spec = np.abs(np.fft.rfft(x))
+        return float(spec[: len(spec) // 8].sum() / spec.sum())
+
+    assert lowband_ratio(out) > lowband_ratio(sig)
+
+
+def test_eq_zero_gain_passthrough():
+    """With all gains at 0 dB, output should equal input."""
+    sr = 44100
+    t = np.linspace(0, 1, sr, False)
+    sig = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    out = require_capability("eq")(sig, sr)  # all gains default 0
+    assert np.allclose(out, sig, atol=1e-6)
+
+
+def test_eq_preserves_shape():
+    sr = 44100
+    stereo = np.random.randn(2, sr).astype(np.float32)
+    out = require_capability("eq")(stereo, sr, mid_gain_db=3.0, mid_freq=1000, mid_q=1.0)
+    assert out.shape == stereo.shape
