@@ -138,6 +138,58 @@ def cmd_unregister(args):
     return 0
 
 
+def cmd_install(args):
+    """Install a plugin by name, URL, or local path."""
+    from .plugins.install import install as plugin_install, InstallError
+
+    try:
+        result = plugin_install(args.target)
+    except InstallError as exc:
+        print(f"pymss install: error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Installed plugin '{result.name}' -> {result.path} (from {result.source})")
+    print("It will be loaded on the next pymss run. Run `pymss plugins list` to verify.")
+    return 0
+
+
+def cmd_uninstall(args):
+    """Remove an installed plugin."""
+    from .plugins.install import uninstall as plugin_uninstall, InstallError
+
+    try:
+        removed = plugin_uninstall(args.name)
+    except InstallError as exc:
+        print(f"pymss uninstall: error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Removed plugin '{args.name}' ({removed})")
+    return 0
+
+
+def cmd_plugins(args):
+    """List installed plugins and their load status, or show the plugins dir."""
+    from .plugins import bootstrap, get_plugins_dir, get_last_report
+
+    if getattr(args, "plugins_command", None) == "dir":
+        print(get_plugins_dir())
+        return 0
+
+    # Default: list.
+    plugins_dir = get_plugins_dir()
+    report = bootstrap()
+    print(f"Plugins directory: {plugins_dir}")
+    if not report.results:
+        print("No plugins installed.")
+        return 0
+    print("")
+    for r in report.results:
+        status = "OK" if r.loaded else f"FAILED ({r.error})"
+        print(f"  {r.name:<24} {status}")
+    failed = report.failed
+    if failed:
+        print(f"\n{len(failed)} plugin(s) failed to load.", file=sys.stderr)
+    return 1 if failed else 0
+
+
 def cmd_download(args):
     """Implement the cmd download helper.
 
@@ -466,6 +518,45 @@ def build_parser():
     download_parser.add_argument("--force", action="store_true")
     download_parser.add_argument("--supported-only", action="store_true", help="Only used with model='all'.")
     download_parser.set_defaults(func=cmd_download)
+
+    # ==========================
+    # Plugins (install / uninstall / list)
+    # ==========================
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Install a plugin by official name, git URL, or local path.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    install_parser.add_argument(
+        "target",
+        help=(
+            "One of:\n"
+            "  <name>    official plugin name (resolved via the registry)\n"
+            "  <url>     git repository URL to clone\n"
+            "  <path>    local directory to copy"
+        ),
+    )
+    install_parser.set_defaults(func=cmd_install)
+
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="Remove an installed plugin.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    uninstall_parser.add_argument("name", help="Installed plugin name to remove.")
+    uninstall_parser.set_defaults(func=cmd_uninstall)
+
+    plugins_parser = subparsers.add_parser(
+        "plugins",
+        help="List installed plugins and their load status.",
+        formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=60),
+    )
+    plugins_subparsers = plugins_parser.add_subparsers(
+        dest="plugins_command", required=False
+    )
+    plugins_subparsers.add_parser("list", help="List installed plugins (default).")
+    plugins_subparsers.add_parser("dir", help="Print the plugins directory path.")
+    plugins_parser.set_defaults(func=cmd_plugins, plugins_command="list")
 
     # ==========================
     # Inference
