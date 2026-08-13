@@ -323,3 +323,88 @@ def test_registry_entry_missing_url_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(install_mod, "_fetch_registry", lambda: fake_registry)
     with pytest.raises(InstallError, match="no 'url'"):
         install_mod.install("bad", plugins_dir=tmp_path / "p")
+
+
+# ---------------------------------------------------------------------------
+# Subdirectory install (URL #fragment and --subpath)
+# ---------------------------------------------------------------------------
+
+
+def test_url_subpath_via_fragment(monkeypatch, tmp_path):
+    """A trailing #path on a URL selects that subdirectory of the repo."""
+    from pymss.plugins import install as install_mod
+
+    captured = {}
+    monkeypatch.setattr(
+        install_mod, "_clone",
+        lambda url, dest, subpath=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
+    )
+    r = install_mod.install(
+        "https://github.com/xxx/repo#plugins/myplugin",
+        plugins_dir=tmp_path / "p",
+    )
+    assert captured["url"] == "https://github.com/xxx/repo"
+    assert captured["subpath"] == "plugins/myplugin"
+    assert r.name == "myplugin"  # derived from subpath's last segment
+    assert r.source == "url"
+
+
+def test_url_subpath_via_argument(monkeypatch, tmp_path):
+    """The subpath argument selects a subdir without a #fragment in the URL."""
+    from pymss.plugins import install as install_mod
+
+    captured = {}
+    monkeypatch.setattr(
+        install_mod, "_clone",
+        lambda url, dest, subpath=None: captured.update(url=url, subpath=subpath) or dest.mkdir(parents=True),
+    )
+    r = install_mod.install(
+        "https://github.com/xxx/repo",
+        plugins_dir=tmp_path / "p",
+        subpath="plugins/myplugin",
+    )
+    assert captured["subpath"] == "plugins/myplugin"
+    assert r.name == "myplugin"
+
+
+def test_url_fragment_overrides_subpath_arg(monkeypatch, tmp_path):
+    """When both #fragment and subpath arg are given, the fragment wins."""
+    from pymss.plugins import install as install_mod
+
+    captured = {}
+    monkeypatch.setattr(
+        install_mod, "_clone",
+        lambda url, dest, subpath=None: captured.update(subpath=subpath) or dest.mkdir(parents=True),
+    )
+    install_mod.install(
+        "https://github.com/xxx/repo#frag/path",
+        plugins_dir=tmp_path / "p",
+        subpath="arg/path",
+    )
+    assert captured["subpath"] == "frag/path"
+
+
+def test_local_path_subpath(tmp_path):
+    """Installing a local path with subpath copies only that subdir."""
+    from pymss.plugins.install import install as plugin_install
+
+    repo = tmp_path / "repo"
+    (repo / "plugins" / "myplugin").mkdir(parents=True)
+    (repo / "plugins" / "myplugin" / "__init__.py").write_text("# plugin\n")
+    (repo / "other").mkdir()
+
+    dest_root = tmp_path / "p"
+    r = plugin_install(str(repo), plugins_dir=dest_root, subpath="plugins/myplugin")
+    assert r.name == "myplugin"
+    assert (dest_root / "myplugin" / "__init__.py").exists()
+    assert not (dest_root / "other").exists()  # only the subdir was copied
+
+
+def test_local_path_subpath_missing(tmp_path):
+    """A non-existent subpath under a local path raises a clear error."""
+    from pymss.plugins.install import install as plugin_install, InstallError
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with pytest.raises(InstallError, match="subpath.*not found"):
+        plugin_install(str(repo), plugins_dir=tmp_path / "p", subpath="nope")

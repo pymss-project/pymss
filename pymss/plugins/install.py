@@ -131,22 +131,35 @@ def _copy_dir(src: Path, dest: Path) -> None:
     shutil.copytree(src, dest)
 
 
-def install(arg: str, plugins_dir: Path | None = None) -> InstallResult:
+def install(arg: str, plugins_dir: Path | None = None, subpath: str | None = None) -> InstallResult:
     """Install a plugin by name, URL, or local path.
 
-    Returns InstallResult with the resolved name and destination path.
+    subpath overrides the auto-detected subdirectory. For URLs, a trailing
+    ``#path/to/subdir`` also selects a subdirectory (takes precedence over the
+    subpath argument). Returns InstallResult with the resolved name and path.
     """
     plugins_dir = plugins_dir or get_plugins_dir()
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
     if _is_url(arg):
-        name = _derive_plugin_name(arg)
+        # A trailing #path selects a subdirectory of the repo.
+        if "#" in arg:
+            url_part, frag = arg.rsplit("#", 1)
+            subpath = frag or subpath
+            arg = url_part
+        name = _derive_plugin_name(arg) if not subpath else subpath.rstrip("/").split("/")[-1]
         dest = plugins_dir / name
-        _clone(arg, dest)
+        _clone(arg, dest, subpath=subpath or None)
         return InstallResult(name=name, path=dest, source="url")
 
     local = Path(arg).expanduser()
     if local.exists() and local.is_dir():
+        if subpath:
+            local = local / subpath
+            if not local.is_dir():
+                raise InstallError(
+                    f"plugin subpath {subpath!r} not found under {arg} (checked {local})"
+                )
         name = local.name
         dest = plugins_dir / name
         _copy_dir(local, dest)

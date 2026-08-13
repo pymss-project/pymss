@@ -143,7 +143,7 @@ def cmd_install(args):
     from .plugins.install import install as plugin_install, InstallError
 
     try:
-        result = plugin_install(args.target)
+        result = plugin_install(args.target, subpath=getattr(args, "subpath", None))
     except InstallError as exc:
         print(f"pymss install: error: {exc}", file=sys.stderr)
         return 1
@@ -567,9 +567,14 @@ def build_parser():
         help=(
             "One of:\n"
             "  <name>    official plugin name (resolved via the registry)\n"
-            "  <url>     git repository URL to clone\n"
+            "  <url>     git repository URL to clone (append #path for a subdir)\n"
             "  <path>    local directory to copy"
         ),
+    )
+    install_parser.add_argument(
+        "--subpath",
+        default=None,
+        help="Subdirectory inside the URL/path repo to install as the plugin.",
     )
     install_parser.set_defaults(func=cmd_install)
 
