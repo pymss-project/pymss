@@ -213,7 +213,8 @@ def save_audio(path, audio, sr, output_format, audio_params):
             stereo arrays should be shaped as ``(samples, 2)``.
         sr (int): Sample rate in Hz.
         output_format (str): Output format. Supported values are ``wav``,
-            ``flac``, ``mp3``, and ``m4a``.
+            ``flac``, ``mp3``, ``m4a``, ``aac``, ``opus``, ``vorbis``, and
+            ``ogg`` (alias for vorbis).
         audio_params (dict): Encoding options. Supported keys include
             ``wav_bit_depth`` (``FLOAT``, ``PCM_16``, ``PCM_24``),
             ``flac_bit_depth`` (currently ``PCM_24`` uses soundfile),
@@ -245,10 +246,41 @@ def save_audio(path, audio, sr, output_format, audio_params):
     audio_array = np.asarray(audio)
     layout = "stereo" if audio_array.ndim > 1 and audio_array.shape[1] == 2 else "mono"
 
+    # Opus only supports 8000/12000/16000/24000/48000 Hz. Resample to the nearest
+    # legal rate using librosa (already a pymss dependency) so callers can pass any sr.
+    _OPUS_RATES = (8000, 12000, 16000, 24000, 48000)
+    if output_format == "opus" and int(sr) not in _OPUS_RATES:
+        target_sr = min(_OPUS_RATES, key=lambda r: abs(r - int(sr)))
+        import librosa
+        audio_array = np.stack(
+            [librosa.resample(ch.astype(np.float32), orig_sr=int(sr), target_sr=target_sr)
+             for ch in (audio_array.T if audio_array.ndim == 2 else [audio_array])],
+            axis=1,
+        ) if audio_array.ndim == 2 else librosa.resample(audio_array.astype(np.float32), orig_sr=int(sr), target_sr=target_sr)
+        sr = target_sr
+
+    # soundfile-backed formats (lossless-ish container + native encoder):
+    # opus/vorbis go through libsndfile, which handles OGG encapsulation cleanly.
+    if output_format == "opus":
+        import soundfile as sf
+        sf.write(path, audio_array, int(sr), format="OGG", subtype="OPUS")
+        return
+    if output_format == "vorbis":
+        import soundfile as sf
+        sf.write(path, audio_array, int(sr), format="OGG", subtype="VORBIS")
+        return
+    if output_format == "ogg":  # alias: ogg defaults to vorbis inside the container
+        import soundfile as sf
+        sf.write(path, audio_array, int(sr), format="OGG", subtype="VORBIS")
+        return
+
     if output_format == "mp3":
         codec = "libmp3lame"
     elif output_format == "m4a":
         codec = audio_params.get("m4a_codec", "aac")
+    elif output_format == "aac":
+        # Raw AAC in ADTS container; use .aac extension. For .m4a use output_format="m4a".
+        codec = "aac"
     elif output_format == "flac":
         # PyAV's FLAC encoder only exposes a single "flac" codec in the current version.
         # In the current version, without access to bits_per_raw_sample in PyAV, PCM_24 may still be encoded as 16-bit.
@@ -262,7 +294,12 @@ def save_audio(path, audio, sr, output_format, audio_params):
         wav_codecs = {"PCM_16": "pcm_s16le", "PCM_24": "pcm_s24le", "FLOAT": "pcm_f32le"}
         codec = wav_codecs.get(audio_params.get("wav_bit_depth", "FLOAT"), wav_codecs["FLOAT"])
 
-    with av.open(path, "w") as container:
+    # Container hint: aac goes into ADTS by default; m4a into mp4/m4a.
+    container_format = None
+    if output_format == "aac":
+        container_format = "adts"
+
+    with av.open(path, "w", format=container_format) as container:
         stream = container.add_stream(codec, rate=int(sr))
         stream.layout = layout
         if output_format == "mp3":
@@ -271,6 +308,8 @@ def save_audio(path, audio, sr, output_format, audio_params):
             stream.bit_rate = _bitrate_to_int(audio_params.get("m4a_bit_rate", "512k"))
             if codec == "aac_at":
                 stream.codec_context.options = {"aac_at_quality": str(audio_params.get("m4a_aac_at_quality", 2))}
+        elif output_format == "aac":
+            stream.bit_rate = _bitrate_to_int(audio_params.get("aac_bit_rate", "128k"))
 
         frame = av.AudioFrame.from_ndarray(_format_audio(audio_array), format="fltp", layout=layout)
         frame.sample_rate = int(sr)
