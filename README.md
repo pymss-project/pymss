@@ -75,7 +75,7 @@ pymss infer bs_roformer_voc_hyperacev2 \
   -o results \
   --save-as-folder \
   --device auto \
-  --format wav
+  --format wav     # wav | flac | mp3 | m4a | aac | opus | vorbis | ogg
 ```
 
 `--device auto` uses CUDA first when an NVIDIA GPU is available. On Apple Silicon it uses the MLX backend by default. Use `--device mlx` to force MLX, or `--device mps` to force PyTorch MPS.
@@ -107,6 +107,19 @@ pymss workflow run -c vocal_chain.yaml \
 
 In a workflow, `input: input` means the original audio, and `input: split.other` means the `other` stem produced by the `split` step. For folder inputs, workflow inference batches by step/model: step 1 runs for every input before step 2 is loaded. `save` controls which stems are written and which output subdirectory they use. By default, workflow batch outputs are grouped as `results/song/vocal/song_vocals.wav`; pass `--output-layout flat` to write them as `results/vocal/song_vocals.wav` instead. Duplicate input stems in the same batch are disambiguated with suffixes such as `song_3_vocals.wav`. Put shared inference options such as `batch_size` under `defaults.inference_params`, and put model-specific options such as each step's `overlap_size` under that step's `inference_params`.
 
+### CLI comfy (comfy-mss JSON workflows)
+
+Run native comfy-mss JSON workflows directly — no ComfyUI runtime required. The graph engine parses the JSON, resolves node links, and executes nodes on top of pymss's own `MSSeparator` and the capability pool:
+
+```sh
+pymss comfy run -c workflow.json \
+  -i input.wav \
+  -o results \
+  --download
+```
+
+All comfy-mss nodes (`pymss_load_audio`, `pymss_mss_separate`, `pymss_audio_ensemble`, `pymss_save_audio`, ...) and ComfyUI core audio nodes (`SaveAudio`/`SaveAudioMP3`/`SaveAudioOpus`/`SaveAudioAdvanced`, `AudioMerge`, `AudioConcat`, `TrimAudioDuration`, `SplitAudioChannels`/`JoinAudioChannels`, `AudioAdjustVolume`, `EmptyAudio`, `AudioEqualizer3Band`, `PreviewAudio`, `LoadAudio`) are supported. Node executors consume built-in capabilities rather than reimplementing DSP, so the same `eq` / `mix` / `ensemble` / `{fmt}_encode` capabilities back the CLI, the Python API, and the workflow nodes. Pass `--no-strict` to skip unknown node types with a warning instead of failing.
+
 ### CLI ensemble
 
 ```sh
@@ -128,6 +141,41 @@ pymss serve --webui
 ```
 
 See [server CLI docs](./docs/server/cli.md), [server API docs](./docs/server/api.md), and [server error docs](./docs/server/errors.md) for details.
+
+### Plugin system
+
+pymss has a plugin system for extending capabilities — audio DSP operations, audio codecs, and workflow nodes. Built-in functionality (23 capabilities: 15 DSP/channel ops + 8 codecs) is registered through the same mechanism plugins use, so core and extensions share one pool.
+
+**Install a plugin:**
+
+```sh
+pymss install opus-toolkit        # by official registry name
+pymss install https://github.com/xxx/pymss-dsp-eq   # by git URL
+pymss install ./my-local-plugin   # by local path
+pymss plugins list                # show installed plugins + load status
+pymss uninstall opus-toolkit
+```
+
+Plugins live in `~/.pymss/plugins/` (override with `PYMSS_PLUGINS_DIR`). A single plugin failing to load never blocks others.
+
+**Write a plugin** — register a capability, and pymss makes it available to the Python API, the CLI, and workflow nodes:
+
+```python
+from pymss.plugins import register_capability, register_node, register_cli
+
+@register_capability("myplugin_denoise")
+def denoise(audio, sample_rate, strength=0.5):
+    ...                          # any numpy audio in/out
+
+@register_node("MyDenoiseNode")  # workflow node consuming the capability
+def denoise_node(ctx, inputs):
+    fn = ctx.require("myplugin_denoise")
+    ...
+```
+
+A capability is a named function in a flat global pool; nodes/CLI/library calls look it up by name. Providers and consumers can ship in different packages, coupled only by the capability name — so someone adapting `SaveAudioOpus` reuses the `opus_encode` capability instead of rewriting the encoder.
+
+Built-in capabilities include: `to_mono`, `split_channels`, `join_channels`, `adjust_volume`, `invert_phase`, `normalize_peak`, `standardize`/`destandardize`, `trim`, `concat`, `mix`, `empty_audio`, `eq`, `resample`, `ensemble`, and `{wav,flac,mp3,m4a,aac,opus,vorbis,ogg}_encode`.
 
 ### Python API
 
@@ -244,7 +292,7 @@ For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator
 - config_path: The path to the configuration file.
 - device: The type of device, default is 'auto'. Must be one of ['auto', 'cuda', 'mps', 'cpu']
 - device_ids: List of device IDs, default is [0].
-- output_format: The output audio format, default is 'wav'. Must be one of ['wav', 'flac', 'mp3', 'm4a']
+- output_format: The output audio format, default is 'wav'. One of wav, flac, mp3, m4a, aac, opus, vorbis, ogg.
 - use_tta: Whether to use TTA, default is False. Using TTA will triple the processing time with a little bit improvement in quality.
 - store_dirs: Storage directories, can be a single folder path or a dictionary with instrument keys.
 - save_as_folder: When True and store_dirs points to one output folder, save each input audio file's stems in a subfolder named after the audio file.

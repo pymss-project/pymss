@@ -74,7 +74,7 @@ pymss infer bs_roformer_voc_hyperacev2 \
   -o results \
   --save-as-folder \
   --device auto \
-  --format wav
+  --format wav     # wav | flac | mp3 | m4a | aac | opus | vorbis | ogg
 ```
 
 `--device auto` 在有 NVIDIA GPU 时优先使用 CUDA；Apple Silicon Mac 默认使用 MLX 后端。可以用 `--device mlx` 强制 MLX，或用 `--device mps` 强制 PyTorch MPS。
@@ -106,6 +106,19 @@ pymss workflow run -c vocal_chain.yaml \
 
 workflow 中的 `input: input` 表示原始音频，`input: split.other` 表示使用 `split` 步骤输出的 `other` 音轨。文件夹输入会按 step/model 批处理：第 1 个 step 会先跑完所有输入，再加载第 2 个 step。`save` 控制保存哪些音轨以及保存到输出目录下的哪个子目录。默认批量输出会按 `results/song/vocal/song_vocals.wav` 分到每个音频的子目录；加 `--output-layout flat` 后会输出为 `results/vocal/song_vocals.wav`。同一批里输入 stem 重名时会自动加后缀，例如 `song_3_vocals.wav`。共享推理参数如 `batch_size` 可以放在 `defaults.inference_params`，每个模型单独的参数如各自的 `overlap_size` 可以放在该 step 的 `inference_params`。
 
+### CLI Comfy（comfy-mss JSON 工作流）
+
+直接运行原生 comfy-mss JSON 工作流，无需 ComfyUI 运行时。图引擎会解析 JSON、解析节点连线，并在 pymss 自己的 `MSSeparator` 和能力池之上执行节点：
+
+```sh
+pymss comfy run -c workflow.json \
+  -i input.wav \
+  -o results \
+  --download
+```
+
+所有 comfy-mss 节点（`pymss_load_audio`、`pymss_mss_separate`、`pymss_audio_ensemble`、`pymss_save_audio` 等）和 ComfyUI 核心音频节点（`SaveAudio`/`SaveAudioMP3`/`SaveAudioOpus`/`SaveAudioAdvanced`、`AudioMerge`、`AudioConcat`、`TrimAudioDuration`、`SplitAudioChannels`/`JoinAudioChannels`、`AudioAdjustVolume`、`EmptyAudio`、`AudioEqualizer3Band`、`PreviewAudio`、`LoadAudio`）都已支持。节点执行器消费内置能力而不是重写 DSP，因此同一套 `eq`/`mix`/`ensemble`/`{fmt}_encode` 能力同时支撑 CLI、Python API 和工作流节点。加 `--no-strict` 可以在遇到未知节点时警告并跳过，而不是报错。
+
 ### CLI Ensemble
 
 ```sh
@@ -127,6 +140,41 @@ pymss serve --webui
 ```
 
 详细用法见 [server CLI 文档](./docs/server/cli.md)、[server API 文档](./docs/server/api.md) 和 [server 错误文档](./docs/server/errors.md)。
+
+### 插件系统
+
+pymss 有插件系统，用于扩展能力——音频 DSP 操作、音频编解码器、以及工作流节点。内置功能（23 个能力：15 个 DSP/声道操作 + 8 个编解码器）和插件用的是同一套注册机制，核心与扩展共用同一个能力池。
+
+**安装插件：**
+
+```sh
+pymss install opus-toolkit        # 按官方目录名
+pymss install https://github.com/xxx/pymss-dsp-eq   # 按 git URL
+pymss install ./my-local-plugin   # 按本地路径
+pymss plugins list                # 查看已安装插件及加载状态
+pymss uninstall opus-toolkit
+```
+
+插件放在 `~/.pymss/plugins/`（可用 `PYMSS_PLUGINS_DIR` 覆盖）。单个插件加载失败不会影响其他插件。
+
+**编写插件** —— 注册一个能力，pymss 会让它对 Python API、CLI 和工作流节点都可用：
+
+```python
+from pymss.plugins import register_capability, register_node, register_cli
+
+@register_capability("myplugin_denoise")
+def denoise(audio, sample_rate, strength=0.5):
+    ...                          # 输入输出都是 numpy 音频数组
+
+@register_node("MyDenoiseNode")  # 消费该能力的工作流节点
+def denoise_node(ctx, inputs):
+    fn = ctx.require("myplugin_denoise")
+    ...
+```
+
+能力是注册在扁平全局池里的具名函数；节点/CLI/库调用都按名字查找。提供者和消费者可以分别打包，仅通过能力名耦合——例如适配 `SaveAudioOpus` 节点时，可以直接复用已有的 `opus_encode` 能力，而不是重写编码器。
+
+内置能力包括：`to_mono`、`split_channels`、`join_channels`、`adjust_volume`、`invert_phase`、`normalize_peak`、`standardize`/`destandardize`、`trim`、`concat`、`mix`、`empty_audio`、`eq`、`resample`、`ensemble`，以及 `{wav,flac,mp3,m4a,aac,opus,vorbis,ogg}_encode`。
 
 ### Python API
 
@@ -217,7 +265,7 @@ with separator as s:
 - config_path: 配置文件路径。
 - device: 设备类型，默认为 'auto'。 必须是以下之一 ['auto', 'cuda', 'mps', 'cpu']
 - device_ids: 设备 ID 列表，默认为 [0]。
-- output_format: 输出音频格式，默认为 'wav'。 必须是以下之一 ['wav', 'flac', 'mp3', 'm4a']
+- output_format: 输出音频格式，默认为 'wav'。可选 wav、flac、mp3、m4a、aac、opus、vorbis、ogg。
 - use_tta: 是否使用 TTA（测试时增强），默认为 False。 使用 TTA 会使处理时间增加三倍，但质量会略有提高。
 - store_dirs: 存储目录，可以是单个文件夹路径或带有乐器键的字典。
 - save_as_folder: 为 True 且 store_dirs 指向同一个输出文件夹时，会把每个输入音频的输出音轨保存到以音频名命名的子文件夹中。
