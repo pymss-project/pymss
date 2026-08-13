@@ -10,7 +10,7 @@ from .model_registry import create_separator, list_models, register_model, resol
 from .progress import _CliInferenceProgress
 from .user_models import KNOWN_MODEL_TYPES, list_user_models
 from .workflow import load_workflow_file, validate_workflow, write_workflow_template
-from .workflow_runner import LegacyWorkflowRunner
+from .graph import LegacyWorkflowRunner
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -330,8 +330,8 @@ def cmd_workflow_run(args):
 
 def cmd_comfy_run(args):
     """Run a native comfy-mss JSON workflow via the DAG core."""
-    from .comfy_loader import load_comfy_file
-    from .dag import run_dag
+    from .graph import load_comfy_file
+    from .graph import run_dag
 
     logger = get_separation_logger()
     dag = load_comfy_file(args.config)

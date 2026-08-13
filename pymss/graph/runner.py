@@ -21,8 +21,8 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-from .dag import SeparatorCache, run_dag
-from .workflow import (
+from .core import SeparatorCache, run_dag
+from ..workflow import (
     Workflow,
     WorkflowError,
     _DEFAULT_AUDIO_PARAMS,
@@ -33,7 +33,7 @@ from .workflow import (
     _validate_output_layout,
     validate_workflow,
 )
-from .yaml_to_dag import compile_workflow_to_dag
+from .yaml_compiler import compile_workflow_to_dag
 
 
 class LegacyWorkflowRunner:

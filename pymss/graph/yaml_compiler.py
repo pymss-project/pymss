@@ -34,7 +34,7 @@ from dataclasses import field
 from pathlib import Path
 from typing import Any
 
-from .dag import (
+from .core import (
     DAG,
     DAGError,
     DAGLink,
@@ -47,7 +47,7 @@ from .dag import (
     VR_PARAMS,
     get_node_type,
 )
-from .workflow import Workflow, WorkflowStep, validate_workflow
+from ..workflow import Workflow, WorkflowStep, validate_workflow
 
 
 # Custom model types understood by ``custom_mss_separate``. Mirrors

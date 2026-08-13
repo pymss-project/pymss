@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .dag import (
+from .core import (
     DAG,
     DAGError,
     DAGLink,
@@ -201,7 +201,7 @@ def _build_node(raw: dict[str, Any], nodes_by_id: dict[int, dict[str, Any]], lin
 
 
 def _empty_signature():
-    from .dag import NodeSignature
+    from .core import NodeSignature
 
     return NodeSignature(inputs=[], output_names=[], output_types=[])
 

@@ -17,8 +17,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pymss.comfy_loader import load_comfy_file, load_comfy_graph
-from pymss.dag import (
+from pymss.graph import load_comfy_file, load_comfy_graph
+from pymss.graph import (
     DAG,
     DAGError,
     DAGNode,
@@ -27,8 +27,8 @@ from pymss.dag import (
     topological_order,
 )
 from pymss.workflow import load_workflow_data
-from pymss.workflow_runner import LegacyWorkflowRunner
-from pymss.yaml_to_dag import compile_workflow_to_dag
+from pymss.graph import LegacyWorkflowRunner
+from pymss.graph import compile_workflow_to_dag
 
 
 COMFY_EXAMPLES_DIR = Path("/Volumes/data/comfy-mss/examples")
@@ -113,7 +113,7 @@ def test_topological_order_respects_dependencies():
     n1 = _node(1)
     n2 = _node(2)
     n3 = _node(3)
-    from pymss.dag import DAGLink
+    from pymss.graph import DAGLink
 
     n2.inputs = [DAGLink(link_id=1, source_node_id=n3.id, source_slot=0, target_node_id=n2.id, target_slot=0, type="AUDIO")]
     n1.inputs = [DAGLink(link_id=2, source_node_id=n2.id, source_slot=0, target_node_id=n1.id, target_slot=0, type="AUDIO")]
@@ -122,7 +122,7 @@ def test_topological_order_respects_dependencies():
 
 
 def test_topological_order_detects_cycle():
-    from pymss.dag import DAGLink
+    from pymss.graph import DAGLink
 
     a = _node("a")
     b = _node("b")
@@ -133,7 +133,7 @@ def test_topological_order_detects_cycle():
 
 
 def test_topological_order_rejects_dangling_link():
-    from pymss.dag import DAGLink
+    from pymss.graph import DAGLink
 
     n = _node("x")
     n.inputs = [DAGLink(link_id=1, source_node_id="missing", source_slot=0, target_node_id="x", target_slot=0, type="AUDIO")]
@@ -326,7 +326,7 @@ def test_comfy_run_end_to_end_with_fake_separator(monkeypatch, tmp_path):
 def test_dag_runs_ensemble_of_inverted_and_direct_stem(monkeypatch, tmp_path):
     """avg(vocals, -other) over a deterministic fake model should be ~0.1."""
 
-    from pymss.dag import DAGLink
+    from pymss.graph import DAGLink
 
     def _load(path, sr=None, mono=False, **_kw):
         return np.asarray([[0.5, 0.4, 0.3], [0.2, 0.1, 0.0]], dtype=np.float32), 44100
@@ -398,7 +398,7 @@ def test_separate_node_matches_stems_case_insensitively(monkeypatch, tmp_path):
     stem names and the node failed with "Invalid instrument key".
     """
 
-    from pymss.dag import DAGLink
+    from pymss.graph import DAGLink
 
     _stub_audio_io(monkeypatch, [])
     saved: list = []
@@ -453,7 +453,7 @@ def test_separator_receives_channel_first_audio(monkeypatch, tmp_path):
     'stereo needs to be set to True if passing in audio signal that is stereo'.
     """
 
-    from pymss.dag import DAGLink
+    from pymss.graph import DAGLink
 
     _stub_audio_io(monkeypatch, [])
     received: dict = {}

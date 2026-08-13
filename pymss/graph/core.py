@@ -142,6 +142,7 @@ def register_node(node_type: str, *, signature: Callable[["DAGNode"], NodeSignat
 
 
 def get_node_type(node_type: str) -> NodeTypeInfo:
+    _load_builtin_nodes()
     try:
         return _REGISTRY[node_type]
     except KeyError as exc:  # pragma: no cover - exercised via run_dag(strict=)
@@ -543,6 +544,7 @@ def run_dag(
     a graph may use either or both (though comfy-mss graphs typically use one).
     """
 
+    _load_builtin_nodes()
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -699,13 +701,18 @@ OUTPUT_NODE_TYPES: set[str] = set()
 def _load_builtin_nodes() -> None:
     """Register the built-in comfy-mss + ComfyUI-passthrough node executors.
 
-    Imported lazily so ``dag.py`` stays importable on its own (test harnesses
-    that only want the topo/runner can stub the registry).
+    Imported lazily so ``core.py`` stays importable on its own (avoids a
+    circular import through the package ``__init__``). The first call to
+    :func:`get_node_type` or :func:`run_dag` triggers registration.
     """
 
-    from . import _dag_nodes  # noqa: F401  (side-effect: registers nodes)
+    global _builtins_loaded
+    if _builtins_loaded:
+        return
+    from . import nodes  # noqa: F401  (side-effect: registers nodes)
 
-    OUTPUT_NODE_TYPES.update(_dag_nodes.OUTPUT_NODE_TYPES)
+    OUTPUT_NODE_TYPES.update(nodes.OUTPUT_NODE_TYPES)
+    _builtins_loaded = True
 
 
-_load_builtin_nodes()
+_builtins_loaded = False

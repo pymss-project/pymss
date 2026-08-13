@@ -37,8 +37,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from . import dag
-from .dag import (
+from .core import (
     AUDIO,
     AudioArtifact,
     DAGError,
@@ -235,7 +234,7 @@ def _input_audio_signature(node: DAGNode) -> NodeSignature:
 
 
 def _execute_input_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
-    from .audio_io import load_audio
+    from ..audio_io import load_audio
 
     if ctx.input_path is None:
         raise DAGError("input_audio node requires an input file (pass input_path to run_dag)")
@@ -256,7 +255,7 @@ def _load_audio_signature(node: DAGNode) -> NodeSignature:
 
 
 def _execute_load_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
-    from .audio_io import load_audio
+    from ..audio_io import load_audio
 
     # Prefer the run-level input_path; fall back to the widget filename (which
     # comfy-mss resolves against ComfyUI's input directory — we instead treat it
@@ -290,7 +289,7 @@ def _load_audio_batch_signature(node: DAGNode) -> NodeSignature:
 
 
 def _execute_load_audio_batch(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
-    from .audio_io import load_audio
+    from ..audio_io import load_audio
 
     node = ctx_node_of(ctx, "pymss_load_audio_batch")
     widgets_values = node_data(node).get("widgets_values", [])
@@ -336,7 +335,7 @@ def _save_audio_signature(node: DAGNode) -> NodeSignature:
 
 
 def _execute_save_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
-    from .audio_io import save_audio
+    from ..audio_io import save_audio
 
     node = ctx_node_of(ctx, "pymss_save_audio")
     widgets_values = node_data(node).get("widgets_values", [])
@@ -592,7 +591,7 @@ def _make_model_separator_factory(ctx: NodeContext, node: DAGNode, *, kind: str,
 
 
 def _make_custom_separator_factory(ctx: NodeContext, node: DAGNode, *, model_type: str, params: dict[str, Any], use_tta: bool, device: str | None, device_ids_raw: Any, debug: bool, stems: list[str]):
-    from .user_models import load_user_models
+    from ..user_models import load_user_models
 
     widgets_values = node_data(node).get("widgets_values", [])
     model_name = str(widget(widgets_values, 0, "") or "").strip()
@@ -777,7 +776,7 @@ def _ensemble_signature(node: DAGNode) -> NodeSignature:
 
 
 def _execute_ensemble(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
-    from .ensemble import average_waveforms
+    from ..ensemble import average_waveforms
 
     node = ctx_node_of(ctx, "pymss_audio_ensemble")
     widgets_values = node_data(node).get("widgets_values", [])
@@ -933,7 +932,7 @@ def _resolve_user_model(name: str):
     ``None`` when no user model matches.
     """
 
-    from .user_models import list_user_models
+    from ..user_models import list_user_models
 
     needle = name.strip().lower()
     for entry in list_user_models():
