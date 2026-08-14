@@ -1407,7 +1407,7 @@ wheels = [
 
 [[package]]
 name = "pymss"
-version = "2.1.0"
+version = "2.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
@@ -1423,6 +1423,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+proxy = [
+    { name = "pysocks" },
+]
 server = [
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1443,13 +1446,14 @@ requires-dist = [
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.31.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pymss-core", specifier = "==0.1.6" },
+    { name = "pysocks", marker = "extra == 'proxy'", specifier = ">=1.7.1,<2" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.7.1" },
     { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.7.1", index = "https://download.pytorch.org/whl/cu128" },
     { name = "tqdm", specifier = ">=4.60" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.30" },
 ]
-provides-extras = ["server"]
+provides-extras = ["server", "proxy"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1472,6 +1476,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/73/03e7656ba1835c3a6f16c14669994feaba292639189f6fed256e55e7a259/pymss_core-0.1.6.tar.gz", hash = "sha256:c3eb5f6913af1add8b51bb02cf218bc604568a52bd446bbe95214dd1dc14c5af", size = 104257, upload-time = "2026-07-26T02:01:23.148Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5f/b1/1f2062395bc75a8cd4e102ee318bdd513c876f54a352a13ca42efeef6f4e/pymss_core-0.1.6-py3-none-any.whl", hash = "sha256:528bd36d21e477083f4770b44fe275654d69f752069d97d330ca55f0ef013788", size = 137128, upload-time = "2026-07-26T02:01:21.588Z" },
+]
+
+[[package]]
+name = "pysocks"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
 ]
 
 [[package]]
