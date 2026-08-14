@@ -328,7 +328,24 @@ def _execute_load_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
     from ..audio_io import load_audio
 
     node = ctx_node_of(ctx, "pymss_load_audio")
-    widget_name = str(widget(node_data(node).get("widgets_values"), 0, "") or "").strip()
+    widgets_values = node_data(node).get("widgets_values", [])
+    widget_name = str(widget(widgets_values, 0, "") or "").strip()
+    # comfy-mss >= 1.0.3 appends an optional input_name widget (slot 1): the
+    # runtime-input key hosts like pymss-studio use to feed this node.
+    input_name = str(widget(widgets_values, 1, "") or "").strip()
+    if input_name:
+        if input_name in ctx.inputs:
+            path = ctx.inputs[input_name]
+            mix, sr = load_audio(path, sr=None, mono=False)
+            name = Path(path).stem
+            artifact = numpy_to_audio(np.asarray(mix, dtype=np.float32), int(sr), source_path=path)
+            return NodeResult(outputs={0: artifact, 1: StringArtifact(name)})
+        # A named slot that the host did not provide is an explicit error —
+        # falling through to positional slots would silently feed the wrong file.
+        raise DAGError(
+            f"pymss_load_audio declares runtime input {input_name!r} but the host did not provide it "
+            f"(available: {', '.join(sorted(ctx.inputs)) or 'none'})"
+        )
     path = _resolve_load_audio_path(ctx, widget_name)
     mix, sr = load_audio(path, sr=None, mono=False)
     name = Path(path).stem
@@ -360,10 +377,20 @@ def _execute_load_audio_batch(ctx: NodeContext, inputs: dict[str, Any]) -> NodeR
     folder = string_value(inputs.get("folder", StringArtifact(""))) or widget(widgets_values, 0, "")
     recursive = _coerce_bool(inputs.get("recursive"), widget(widgets_values, 1, False))
     sort_files = _coerce_bool(inputs.get("sort_files"), widget(widgets_values, 2, True))
+    input_name = str(widget(widgets_values, 3, "") or "").strip()
 
     paths = _scan_audio_folder(str(folder or ""), recursive=recursive, sort_files=sort_files)
-    # When the caller passed input_paths (YAML folder mode) or named inputs,
-    # prefer those over scanning.
+    # Runtime inputs take precedence over scanning: a named slot (comfy-mss >= 1.0.3
+    # input_name widget) receives the host-provided file list keyed by that name;
+    # otherwise fall back to the positional lists.
+    if input_name:
+        if input_name in ctx.inputs:
+            paths = [ctx.inputs[input_name]]
+        else:
+            raise DAGError(
+                f"pymss_load_audio_batch declares runtime input {input_name!r} but the host did not provide it "
+                f"(available: {', '.join(sorted(ctx.inputs)) or 'none'})"
+            )
     if not paths and ctx.input_paths:
         paths = list(ctx.input_paths)
     if not paths and ctx.inputs:
