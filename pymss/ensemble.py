@@ -67,12 +67,8 @@ def absmax(a, *, axis):
 
     Returns:
         Any: Computed result."""
-    dims = list(a.shape)
-    dims.pop(axis)
-    indices = np.ogrid[tuple(slice(0, d) for d in dims)]
-    argmax = np.abs(a).argmax(axis=axis)
-    indices.insert((len(a.shape) + axis) % len(a.shape), argmax)
-    return a[tuple(indices)]
+    idxs = np.expand_dims(np.abs(a).argmax(axis=axis), axis)
+    return np.squeeze(np.take_along_axis(a, idxs, axis=axis), axis=axis)
 
 
 def lambda_min(arr, axis=None, key=None, keepdims=False):
