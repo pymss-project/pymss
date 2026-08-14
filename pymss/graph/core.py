@@ -32,7 +32,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -235,6 +235,9 @@ class NodeContext:
     separator_cache: "SeparatorCache"
     input_path: str | None = None
     input_paths: list[str] = field(default_factory=list)
+    # Named runtime inputs: logical name -> file path. LoadAudio-family nodes
+    # resolve their widget against this mapping first (see _execute_load_audio).
+    inputs: dict[str, str] = field(default_factory=dict)
     strict: bool = True
     model_dir: str | os.PathLike | None = None
     download: bool = False
@@ -502,6 +505,7 @@ def run_dag(
     output_dir: str | os.PathLike,
     input_path: str | os.PathLike | None = None,
     input_paths: Sequence[str | os.PathLike] | None = None,
+    inputs: Mapping[str, str | os.PathLike] | None = None,
     logger: Any = None,
     debug: bool = False,
     progress_callback: Callable[[int, int, str | None], None] | None = None,
@@ -532,6 +536,7 @@ def run_dag(
             separator_cache=cache,
             input_path=str(input_path) if input_path else None,
             input_paths=[str(p) for p in input_paths] if input_paths else [],
+            inputs={str(name): str(path) for name, path in (inputs or {}).items()},
             strict=strict,
             model_dir=model_dir,
             download=download,

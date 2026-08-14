@@ -256,25 +256,80 @@ def _load_audio_signature(node: DAGNode) -> NodeSignature:
     )
 
 
+def _iter_load_audio_nodes(ctx: NodeContext) -> list["DAGNode"]:
+    """All pymss_load_audio-family nodes in the graph, ordered by node id.
+
+    Empty-widget load nodes are assigned runtime inputs positionally
+    (the k-th empty node gets the k-th input path), so a stable order matters.
+    Node id order is stable across (de)serialisation, unlike canvas position.
+    """
+    nodes = []
+    for node in ctx.nodes_by_id.values():
+        registered = str(getattr(node, "type", "") or "")
+        # LoadAudio is registered as an alias of pymss_load_audio, so executor
+        # nodes report one of the two names depending on how they were loaded.
+        if registered in {"pymss_load_audio", "LoadAudio"}:
+            nodes.append(node)
+    def _id_key(node: "DAGNode"):
+        value = getattr(node, "id", 0)
+        try:
+            return (0, int(value))
+        except (TypeError, ValueError):
+            return (1, str(value))
+    return sorted(nodes, key=_id_key)
+
+
+def _resolve_load_audio_path(ctx: NodeContext, widget_name: str) -> str:
+    """Resolve a LoadAudio widget value to a file path.
+
+    Resolution order:
+    1. Logical name: the widget matches a key of the ``inputs`` mapping passed
+       to ``run_dag`` — the host (desktop app / CLI) names each runtime input.
+    2. Existing path: an absolute or cwd-relative path that exists on disk —
+       the graph carries its own input.
+    3. ``input_paths`` / ``input_path``: the widget is a placeholder name (the
+       comfy-mss convention — e.g. ``in.wav`` — where the actual file arrives
+       via the CLI ``-i`` or the host). Positional: the k-th placeholder-only
+       widget in node-id order takes ``input_paths[k]``; a single
+       ``input_path`` serves every placeholder widget.
+    4. Empty widget behaves like a placeholder (nothing was named).
+    5. No runtime input at all is an explicit error naming the widget value.
+    """
+    if widget_name and widget_name in ctx.inputs:
+        return ctx.inputs[widget_name]
+    if widget_name and Path(widget_name).is_file():
+        return widget_name
+    placeholder_nodes = [n for n in _iter_load_audio_nodes(ctx) if not _is_named_input_widget(ctx, n)]
+    current = ctx.nodes_by_id.get(ctx.current_node_id) if ctx.current_node_id is not None else None
+    try:
+        index = placeholder_nodes.index(current)
+    except ValueError:
+        index = 0
+    if ctx.input_paths:
+        try:
+            return ctx.input_paths[min(index, len(ctx.input_paths) - 1)]
+        except IndexError:
+            pass
+    if ctx.input_path:
+        return ctx.input_path
+    detail = f"widget {widget_name!r} is neither a named input (available: {', '.join(sorted(ctx.inputs)) or 'none'}) nor an existing file"
+    if not widget_name:
+        detail = "widget is empty and no runtime input was provided"
+    raise DAGError(f"pymss_load_audio {detail} (pass inputs=/input_paths=/input_path to run_dag)")
+
+
+def _is_named_input_widget(ctx: NodeContext, node: "DAGNode") -> bool:
+    """Whether a load node's widget resolves without a runtime input."""
+    value = str(widget(node_data(node).get("widgets_values"), 0, "") or "").strip()
+    return bool(value) and (value in ctx.inputs or Path(value).is_file())
+
+
 def _execute_load_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
     from ..audio_io import load_audio
 
     node = ctx_node_of(ctx, "pymss_load_audio")
     widget_name = str(widget(node_data(node).get("widgets_values"), 0, "") or "").strip()
-    # Multi-input graphs name a specific file per load node (e.g. "input.wav",
-    # "input2.wav"); resolve it relative to cwd when it exists. Single-input
-    # graphs typically pass ``-i`` on the CLI and leave the widget as a placeholder,
-    # so we fall back to ``ctx.input_path`` in that case.
-    path = None
-    if widget_name and Path(widget_name).is_file():
-        path = widget_name
-    elif ctx.input_path:
-        path = ctx.input_path
-    else:
-        raise DAGError(
-            "pymss_load_audio needs an input path: either set the node's widget "
-            "to an existing file or pass input_path to run_dag"
-        )
+    path = _resolve_load_audio_path(ctx, widget_name)
     mix, sr = load_audio(path, sr=None, mono=False)
     name = Path(path).stem
     artifact = numpy_to_audio(np.asarray(mix, dtype=np.float32), int(sr), source_path=path)
@@ -307,9 +362,12 @@ def _execute_load_audio_batch(ctx: NodeContext, inputs: dict[str, Any]) -> NodeR
     sort_files = _coerce_bool(inputs.get("sort_files"), widget(widgets_values, 2, True))
 
     paths = _scan_audio_folder(str(folder or ""), recursive=recursive, sort_files=sort_files)
-    # When the caller passed input_paths (YAML folder mode), prefer those.
+    # When the caller passed input_paths (YAML folder mode) or named inputs,
+    # prefer those over scanning.
     if not paths and ctx.input_paths:
         paths = list(ctx.input_paths)
+    if not paths and ctx.inputs:
+        paths = list(ctx.inputs.values())
     if not paths:
         raise DAGError(f"pymss_load_audio_batch found no audio files in {folder!r}")
 

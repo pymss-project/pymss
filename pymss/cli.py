@@ -460,6 +460,17 @@ def cmd_workflow_run(args):
     return 0
 
 
+def _parse_named_inputs(values):
+    """Parse repeated ``--named-input name=path`` arguments into a mapping."""
+    inputs = {}
+    for value in values or []:
+        name, sep, path = value.partition("=")
+        if not sep or not name.strip() or not path.strip():
+            raise SystemExit(f"invalid --named-input (expected name=path): {value!r}")
+        inputs[name.strip()] = path.strip()
+    return inputs
+
+
 def cmd_comfy_run(args):
     """Run a native comfy-mss JSON workflow via the DAG core."""
     from .graph import load_comfy_file, run_dag
@@ -471,6 +482,7 @@ def cmd_comfy_run(args):
         output_dir=args.output,
         input_path=args.input,
         input_paths=args.input_folder,
+        inputs=_parse_named_inputs(getattr(args, "named_input", None)),
         logger=logger,
         debug=args.debug,
         strict=args.strict,
@@ -875,6 +887,14 @@ def build_parser():
         action="append",
         default=None,
         help="Input folder for pymss_load_audio_batch nodes. Repeatable.",
+    )
+    comfy_run_parser.add_argument(
+        "--named-input",
+        action="append",
+        default=None,
+        metavar="NAME=PATH",
+        help="Named runtime input for pymss_load_audio nodes whose widget is a "
+             "logical name (e.g. --named-input vocal=song_vocal.wav). Repeatable.",
     )
     comfy_run_parser.add_argument("-o", "--output", default="results", help="Output folder.")
     comfy_run_parser.add_argument("--model-dir", help="Local model cache directory.")
