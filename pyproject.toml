@@ -51,6 +51,9 @@ server = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
 ]
+proxy = [
+    "PySocks>=1.7.1,<2",
+]
 
 [dependency-groups]
 dev = [

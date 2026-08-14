@@ -47,7 +47,7 @@ Example:
 from .separator import MSSeparator
 from .logger import get_separation_logger
 from .model_registry import create_separator, get_model_entry, list_models, register_model, resolve_model, unregister_model
-from .model_download import download_model
+from .model_download import ProxyError, download_model
 from .user_models import list_user_models
 from .ensemble import ensemble_audios, save_ensemble_audio
 from .audio_io import load_audio, save_audio
