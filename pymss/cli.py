@@ -950,7 +950,9 @@ def main(argv=None):
     try:
         return args.func(args)
     except Exception as exc:
-        print(f"pymss: error: {exc}", file=sys.stderr)
+        import traceback
+        print(f"pymss error: {exc}", file=sys.stderr)
+        traceback.print_exc()
         return 1
 
 
