@@ -256,72 +256,35 @@ def _load_audio_signature(node: DAGNode) -> NodeSignature:
     )
 
 
-def _iter_load_audio_nodes(ctx: NodeContext) -> list["DAGNode"]:
-    """All pymss_load_audio-family nodes in the graph, ordered by node id.
-
-    Empty-widget load nodes are assigned runtime inputs positionally
-    (the k-th empty node gets the k-th input path), so a stable order matters.
-    Node id order is stable across (de)serialisation, unlike canvas position.
-    """
-    nodes = []
-    for node in ctx.nodes_by_id.values():
-        registered = str(getattr(node, "type", "") or "")
-        # LoadAudio is registered as an alias of pymss_load_audio, so executor
-        # nodes report one of the two names depending on how they were loaded.
-        if registered in {"pymss_load_audio", "LoadAudio"}:
-            nodes.append(node)
-    def _id_key(node: "DAGNode"):
-        value = getattr(node, "id", 0)
-        try:
-            return (0, int(value))
-        except (TypeError, ValueError):
-            return (1, str(value))
-    return sorted(nodes, key=_id_key)
-
-
 def _resolve_load_audio_path(ctx: NodeContext, widget_name: str) -> str:
-    """Resolve a LoadAudio widget value to a file path.
+    """Resolve the audio widget of a load node — no guessing.
 
-    Resolution order:
-    1. Logical name: the widget matches a key of the ``inputs`` mapping passed
-       to ``run_dag`` — the host (desktop app / CLI) names each runtime input.
-    2. Existing path: an absolute or cwd-relative path that exists on disk —
-       the graph carries its own input.
-    3. ``input_paths`` / ``input_path``: the widget is a placeholder name (the
-       comfy-mss convention — e.g. ``in.wav`` — where the actual file arrives
-       via the CLI ``-i`` or the host). Positional: the k-th placeholder-only
-       widget in node-id order takes ``input_paths[k]``; a single
-       ``input_path`` serves every placeholder widget.
-    4. Empty widget behaves like a placeholder (nothing was named).
-    5. No runtime input at all is an explicit error naming the widget value.
+    Exactly two ways a load node gets its file:
+    1. The widget names an existing path on disk — the graph carries its own
+       input.
+    2. The host provided it via the ``inputs`` mapping (see ``run_dag``):
+       either the node's ``input_name`` widget matched a key (checked by the
+       caller before getting here), or — legacy one-slot graphs — the audio
+       widget itself is the key.
+    Anything else is an error. There is deliberately no placeholder/positional
+    fallback: silently substituting a mistyped name or reordering files across
+    nodes produces wrong-but-plausible output, which is far worse than a clear
+    failure.
     """
-    if widget_name and widget_name in ctx.inputs:
-        return ctx.inputs[widget_name]
     if widget_name and Path(widget_name).is_file():
         return widget_name
-    placeholder_nodes = [n for n in _iter_load_audio_nodes(ctx) if not _is_named_input_widget(ctx, n)]
-    current = ctx.nodes_by_id.get(ctx.current_node_id) if ctx.current_node_id is not None else None
-    try:
-        index = placeholder_nodes.index(current)
-    except ValueError:
-        index = 0
-    if ctx.input_paths:
-        try:
-            return ctx.input_paths[min(index, len(ctx.input_paths) - 1)]
-        except IndexError:
-            pass
-    if ctx.input_path:
-        return ctx.input_path
-    detail = f"widget {widget_name!r} is neither a named input (available: {', '.join(sorted(ctx.inputs)) or 'none'}) nor an existing file"
-    if not widget_name:
-        detail = "widget is empty and no runtime input was provided"
-    raise DAGError(f"pymss_load_audio {detail} (pass inputs=/input_paths=/input_path to run_dag)")
-
-
-def _is_named_input_widget(ctx: NodeContext, node: "DAGNode") -> bool:
-    """Whether a load node's widget resolves without a runtime input."""
-    value = str(widget(node_data(node).get("widgets_values"), 0, "") or "").strip()
-    return bool(value) and (value in ctx.inputs or Path(value).is_file())
+    if widget_name and widget_name in ctx.inputs:
+        return ctx.inputs[widget_name]
+    detail = (
+        f"widget {widget_name!r} is not an existing file"
+        if widget_name
+        else "audio widget is empty"
+    )
+    raise DAGError(
+        f"pymss_load_audio {detail}; set the node's audio widget to a file path, "
+        f"or give it an input_name and provide it via run_dag(inputs=...) "
+        f"(available: {', '.join(sorted(ctx.inputs)) or 'none'})"
+    )
 
 
 def _execute_load_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
@@ -380,9 +343,9 @@ def _execute_load_audio_batch(ctx: NodeContext, inputs: dict[str, Any]) -> NodeR
     input_name = str(widget(widgets_values, 3, "") or "").strip()
 
     paths = _scan_audio_folder(str(folder or ""), recursive=recursive, sort_files=sort_files)
-    # Runtime inputs take precedence over scanning: a named slot (comfy-mss >= 1.0.3
-    # input_name widget) receives the host-provided file list keyed by that name;
-    # otherwise fall back to the positional lists.
+    # A named slot (input_name widget, comfy-mss >= 1.0.3) receives the
+    # host-provided file keyed by that name; it takes precedence over folder
+    # scanning. No positional fallbacks — see _resolve_load_audio_path.
     if input_name:
         if input_name in ctx.inputs:
             paths = [ctx.inputs[input_name]]
@@ -391,12 +354,11 @@ def _execute_load_audio_batch(ctx: NodeContext, inputs: dict[str, Any]) -> NodeR
                 f"pymss_load_audio_batch declares runtime input {input_name!r} but the host did not provide it "
                 f"(available: {', '.join(sorted(ctx.inputs)) or 'none'})"
             )
-    if not paths and ctx.input_paths:
-        paths = list(ctx.input_paths)
-    if not paths and ctx.inputs:
-        paths = list(ctx.inputs.values())
     if not paths:
-        raise DAGError(f"pymss_load_audio_batch found no audio files in {folder!r}")
+        raise DAGError(
+            f"pymss_load_audio_batch found no audio files in {folder!r}; set the folder widget "
+            "or provide the declared runtime input via run_dag(inputs=...)"
+        )
 
     artifacts: list[AudioArtifact] = []
     names: list[StringArtifact] = []

@@ -481,7 +481,6 @@ def cmd_comfy_run(args):
         dag,
         output_dir=args.output,
         input_path=args.input,
-        input_paths=args.input_folder,
         inputs=_parse_named_inputs(getattr(args, "named_input", None)),
         logger=logger,
         debug=args.debug,
@@ -881,12 +880,6 @@ def build_parser():
     comfy_run_parser.add_argument("-c", "--config", required=True, help="comfy-mss workflow JSON file.")
     comfy_run_parser.add_argument(
         "-i", "--input", help="Input audio file. Consumed by pymss_load_audio / input_audio nodes."
-    )
-    comfy_run_parser.add_argument(
-        "--input-folder",
-        action="append",
-        default=None,
-        help="Input folder for pymss_load_audio_batch nodes. Repeatable.",
     )
     comfy_run_parser.add_argument(
         "--named-input",

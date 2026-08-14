@@ -145,8 +145,8 @@ def _make_flow_json(input_widget="in.wav"):
 def test_invert_phase_consumes_capability(tone_file, tmp_path):
     """The invert_phase node must delegate to the invert_phase capability."""
     out_dir = tmp_path / "out"
-    dag = load_comfy_graph(_make_flow_json())
-    saved = run_dag(dag, output_dir=str(out_dir), input_path=tone_file,
+    dag = load_comfy_graph(_make_flow_json(str(tone_file)))
+    saved = run_dag(dag, output_dir=str(out_dir),
                     separator_cache=SeparatorCache())
     assert len(saved) == 1
     # Verify the output is actually phase-inverted (orig + inv ~= 0).
@@ -170,8 +170,8 @@ def test_node_consumes_capability_via_ctx_require():
 def test_save_audio_via_capability(tone_file, tmp_path):
     """save_audio node dispatches through the codec capability pool."""
     out_dir = tmp_path / "out"
-    dag = load_comfy_graph(_make_flow_json())
-    saved = run_dag(dag, output_dir=str(out_dir), input_path=tone_file,
+    dag = load_comfy_graph(_make_flow_json(str(tone_file)))
+    saved = run_dag(dag, output_dir=str(out_dir),
                     separator_cache=SeparatorCache())
     assert os.path.getsize(saved[0]) > 0
 
@@ -220,14 +220,14 @@ def test_save_audio_advanced_registered():
     assert "SaveAudioAdvanced" in OUTPUT_NODE_TYPES
 
 
-def _make_advanced_flow(format_name, quality=""):
+def _make_advanced_flow(format_name, quality="", input_widget="in.wav"):
     return {
         "last_node_id": 2, "last_link_id": 1,
         "nodes": [
             {"id": 1, "type": "pymss_load_audio", "inputs": [],
              "outputs": [{"name": "audio", "type": "AUDIO", "links": [1]},
                          {"name": "name", "type": "STRING", "links": None}],
-             "widgets_values": ["in.wav"]},
+             "widgets_values": [input_widget]},
             {"id": 2, "type": "SaveAudioAdvanced",
              "inputs": [{"name": "audio", "type": "AUDIO", "link": 1},
                        {"name": "filename_prefix", "type": "STRING", "link": None},
@@ -241,8 +241,8 @@ def _make_advanced_flow(format_name, quality=""):
 
 
 def test_save_audio_advanced_mp3(tone_file, tmp_path):
-    dag = load_comfy_graph(_make_advanced_flow("mp3", "128k"))
-    saved = run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file,
+    dag = load_comfy_graph(_make_advanced_flow("mp3", "128k", str(tone_file)))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"),
                     separator_cache=SeparatorCache())
     assert len(saved) == 1
     assert saved[0].endswith(".mp3")
@@ -250,14 +250,80 @@ def test_save_audio_advanced_mp3(tone_file, tmp_path):
 
 
 def test_save_audio_advanced_opus(tone_file, tmp_path):
-    dag = load_comfy_graph(_make_advanced_flow("opus", "96k"))
-    saved = run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file,
+    dag = load_comfy_graph(_make_advanced_flow("opus", "96k", str(tone_file)))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"),
                     separator_cache=SeparatorCache())
     assert saved[0].endswith(".opus")
 
 
 def test_save_audio_advanced_flac(tone_file, tmp_path):
-    dag = load_comfy_graph(_make_advanced_flow("flac"))
-    saved = run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file,
+    dag = load_comfy_graph(_make_advanced_flow("flac", input_widget=str(tone_file)))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"),
                     separator_cache=SeparatorCache())
     assert saved[0].endswith(".flac")
+
+
+# ---------------------------------------------------------------------------
+# Runtime inputs (input_name widget / inputs mapping) — strict semantics
+# ---------------------------------------------------------------------------
+
+def _make_runtime_flow(widgets):
+    """Load nodes with [audio, input_name] widgets, each feeding a save node."""
+    nodes, links = [], []
+    next_id = 0
+    for widget_pair in widgets:
+        next_id += 1
+        nodes.append({"id": next_id, "type": "pymss_load_audio", "inputs": [],
+                      "outputs": [{"name": "audio", "type": "AUDIO", "links": [len(links) + 1]},
+                                  {"name": "audio_name", "type": "STRING", "links": None}],
+                      "widgets_values": list(widget_pair)})
+        next_id += 1
+        links.append([len(links) + 1, next_id - 1, 0, next_id, 0, "AUDIO"])
+        nodes.append({"id": next_id, "type": "pymss_save_audio",
+                      "inputs": [{"name": "audio", "type": "AUDIO", "link": len(links)},
+                                 {"name": "filename", "type": "STRING", "link": None}],
+                      "outputs": [], "widgets_values": ["wav", "44100"]})
+    return {"last_node_id": next_id, "last_link_id": len(links),
+            "nodes": nodes, "links": links}
+
+
+def test_runtime_input_name_hits_mapping(tone_file, tmp_path):
+    """input_name resolves through the run_dag inputs mapping."""
+    dag = load_comfy_graph(_make_runtime_flow([["placeholder.wav", "lead"], ["other.wav", "backing"]]))
+    second = _write_second_tone(tmp_path)
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"),
+                    inputs={"lead": tone_file, "backing": second})
+    assert len(saved) == 2
+
+
+def test_runtime_input_name_declared_but_missing_fails(tone_file, tmp_path):
+    """A declared input_name the host did not provide is an explicit error."""
+    dag = load_comfy_graph(_make_runtime_flow([["placeholder.wav", "lead"]]))
+    with pytest.raises(DAGError, match="lead"):
+        run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"other": tone_file})
+
+
+def test_no_placeholder_fallback(tone_file, tmp_path):
+    """A widget that is neither a path, an inputs key, nor a named slot errors
+    out instead of silently consuming input_path/input_paths."""
+    dag = load_comfy_graph(_make_runtime_flow([["in.wav", ""]]))
+    with pytest.raises(DAGError, match="not an existing file"):
+        run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file)
+
+
+def test_audio_widget_as_inputs_key(tone_file, tmp_path):
+    """Legacy single-slot graphs: the audio widget itself is the inputs key."""
+    dag = load_comfy_graph(_make_runtime_flow([["lead", ""]]))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"lead": tone_file})
+    assert len(saved) == 1
+
+
+def _write_second_tone(tmp_path):
+    import numpy as np
+    from pymss import save_audio
+    sr = 44100
+    t = np.linspace(0, 0.3, sr * 3 // 10, False)
+    mono = (0.2 * np.sin(2 * np.pi * 330 * t)).astype(np.float32)
+    p = tmp_path / "second.wav"
+    save_audio(str(p), np.column_stack([mono, mono]), sr, "wav", {"wav_bit_depth": "PCM_16"})
+    return str(p)
