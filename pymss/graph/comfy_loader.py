@@ -117,6 +117,11 @@ def _build_link_map(raw_links: list[Any]) -> dict[int, tuple[int, int, int, int,
     if not raw_links:
         return links
     for entry in raw_links:
+        # ComfyUI serializes links as 6-tuples; a host bug (pymss-studio <= 0.0.12
+        # litegraph adapter) JSON-round-tripped them into numeric-key objects
+        # ({"0": id, "1": src, ...}). Accept both so stored graphs keep working.
+        if isinstance(entry, dict):
+            entry = [entry.get(str(i), entry.get(i)) for i in range(6)]
         if not isinstance(entry, list) or len(entry) < 6:
             continue
         try:

@@ -401,8 +401,15 @@ def _prepare_mix_channels(mix, is_stereo, logger):
     from .plugins.builtins import to_mono
 
     if is_stereo and len(mix.shape) == 1:
-        logger.warning("Track is mono, but model is stereo, adding a second channel.")
+        if logger:
+            logger.warning("Track is mono, but model is stereo, adding a second channel.")
         return np.stack([mix, mix], axis=0)
+    if is_stereo and len(mix.shape) == 2 and mix.shape[0] == 1:
+        # [1, N] channel-first mono (e.g. graph AudioArtifact normalizes 1-D
+        # arrays to [1, N]) — duplicate the channel for stereo models.
+        if logger:
+            logger.warning("Track is mono, but model is stereo, adding a second channel.")
+        return np.concatenate([mix, mix], axis=0)
     if is_stereo and len(mix.shape) > 2:
         logger.warning("Track has more than 2 channels, taking mean of all channels and adding a second channel.")
         mono = to_mono(mix)

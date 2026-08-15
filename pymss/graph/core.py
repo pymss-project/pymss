@@ -433,23 +433,19 @@ def topological_order(nodes: Sequence[DAGNode]) -> list[DAGNode]:
             incoming[node.id].add(link.link_id)
             outgoing[link.source_node_id].append(node.id)
 
-    # ComfyUI stores an explicit ``order`` field; if every node has one we treat
-    # it as authoritative (it encodes the topo sort the editor computed).
-    if all(getattr(n, "_explicit_order", None) is not None for n in nodes):
-        ordered = sorted(nodes, key=lambda n: getattr(n, "_explicit_order"))
-        seen: set[object] = set()
-        for n in ordered:
-            for link in n.inputs:
-                if link is None:
-                    continue
-                if link.source_node_id not in seen:
-                    raise DAGError(
-                        f"node {n.id!r} depends on {link.source_node_id!r} which appears later in explicit order"
-                    )
-            seen.add(n.id)
-        return list(ordered)
-
-    index = {node.id: i for i, node in enumerate(nodes)}
+    # Kahn's algorithm. The comfy ``order`` field is the editor's *layout*
+    # order (it reflects canvas position, not execution readiness) — use it
+    # only as a tie-breaker among ready nodes so visually-upper nodes run
+    # first, never as an authoritative execution order (a load node placed
+    # below its consumer would otherwise fail validation).
+    index = {
+        node.id: (
+            getattr(node, "_explicit_order", None)
+            if getattr(node, "_explicit_order", None) is not None
+            else i
+        )
+        for i, node in enumerate(nodes)
+    }
     order: list[DAGNode] = []
     ready = sorted(
         (node.id for node in nodes if not incoming[node.id]), key=lambda nid: index[nid]

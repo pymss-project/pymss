@@ -127,6 +127,14 @@ def _common_separator_kwargs(
     }
 
 
+def _is_placeholder_stem(name: str) -> bool:
+    """Editor placeholder stem names (stem_1, stem_2, ...) — see
+    registerNodes.ts DEFAULT_STEMS: ports created before a model is chosen."""
+    import re
+
+    return bool(re.fullmatch(r"stem_\d+", str(name).strip()))
+
+
 def _run_separation(
     ctx: NodeContext,
     node: DAGNode,
@@ -741,6 +749,7 @@ def _execute_separate(kind: str, *, is_list: bool):
         all_stem_names: list[StringArtifact] = []
         for audio in audios:
             results = _run_separation(ctx, node, audio, build_separator=factory, stems=stems_for_run)
+            claimed: set[str] = set()
             for stem in stems_for_run:
                 value = results.get(stem)
                 if value is None:
@@ -749,11 +758,18 @@ def _execute_separate(kind: str, *, is_list: bool):
                     # ComfyUI may not match the model's exact stem casing
                     # (e.g. "vocals" vs "Vocals"). Match on lowercased names.
                     value = next((v for k, v in results.items() if k.lower() == stem.lower()), None)
+                if value is None and _is_placeholder_stem(stem):
+                    # Editor placeholder ports (stem_1/stem_2/...) mean "the
+                    # next unclaimed output"; assign remaining produced stems
+                    # in production order.
+                    value = next((v for k, v in results.items() if k not in claimed), None)
                 if value is None:
                     raise DAGError(
                         f"node {node.id!r} declared stem {stem!r} but model produced "
                         f"only {sorted(results.keys())}"
                     )
+                if value is not None:
+                    claimed.add(next((k for k, v in results.items() if v is value), stem))
                 artifact = numpy_to_audio(np.asarray(value, dtype=np.float32), audio.sample_rate, stem_name=stem, source_path=audio.source_path)
                 all_audio_results.append(artifact)
                 all_stem_names.append(StringArtifact(stem))
