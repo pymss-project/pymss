@@ -717,6 +717,20 @@ def _exec_json_extract(ctx, inputs):
 register_node("JsonExtractString", signature=_sig_json_extract, execute=_exec_json_extract)
 
 
+def _sig_string_constant(node):
+    return NodeSignature(inputs=[], output_names=["STRING"], output_types=[STRING])
+
+
+def _exec_string_constant(ctx, inputs):
+    """Constant string source — feeds StringConcatenate suffixes and any
+    STRING input that needs a literal (ComfyUI covers this with Primitive
+    String nodes; graphs imported without them rely on this node)."""
+    return NodeResult(outputs={0: StringArtifact(str(_w(ctx, 0, "")))})
+
+
+register_node("StringConstant", signature=_sig_string_constant, execute=_exec_string_constant)
+
+
 # Register ComfyUI native IO aliases after all comfy-mss nodes are guaranteed
 # to exist (nodes.py is imported by core._load_builtin_nodes before this module).
 _register_native_io_aliases()
