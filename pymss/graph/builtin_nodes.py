@@ -21,6 +21,7 @@ from .core import (
     AudioArtifact,
     DAGError,
     DAGNode,
+    DAGOutputRecord,
     NodeContext,
     NodeResult,
     NodeSignature,
@@ -165,6 +166,7 @@ def _execute_save_audio_advanced(ctx: NodeContext, inputs: dict[str, Any]) -> No
 
     audios = audio_input if isinstance(audio_input, list) else [audio_input]
     saved: list[str] = []
+    records: list[DAGOutputRecord] = []
     for i, art in enumerate(audios):
         if not isinstance(art, AudioArtifact):
             raise DAGError("SaveAudioAdvanced received non-AUDIO value")
@@ -173,9 +175,21 @@ def _execute_save_audio_advanced(ctx: NodeContext, inputs: dict[str, Any]) -> No
         arr = art.audio
         save_arr = arr.T if arr.ndim == 2 else arr[:, None]
         save_audio(str(path), np.asfortranarray(save_arr), art.sample_rate, fmt_name, audio_params)
-        saved.append(str(path))
+        saved_path = str(path)
+        saved.append(saved_path)
+        records.append(
+            DAGOutputRecord(
+                path=saved_path,
+                stem=art.stem_name or "",
+                node_id=ctx.current_node_id,
+                node_type="SaveAudioAdvanced",
+                sample_rate=art.sample_rate,
+                format=fmt_name,
+                source_path=str(art.source_path or ""),
+            )
+        )
     # Pass the audio through (output slot 0) so downstream nodes can use it.
-    return NodeResult(outputs={0: audio_input}, saved_paths=saved)
+    return NodeResult(outputs={0: audio_input}, saved_paths=saved, saved_records=records)
 
 
 register_node("SaveAudioAdvanced", signature=_save_audio_advanced_signature, execute=_execute_save_audio_advanced)
@@ -215,6 +229,7 @@ def _save_with_prefix(ctx: NodeContext, inputs: dict[str, Any], fmt: str) -> Nod
 
     audios = audio_input if isinstance(audio_input, list) else [audio_input]
     saved: list[str] = []
+    records: list[DAGOutputRecord] = []
     for i, art in enumerate(audios):
         if not isinstance(art, AudioArtifact):
             raise DAGError("SaveAudio received non-AUDIO value")
@@ -223,8 +238,20 @@ def _save_with_prefix(ctx: NodeContext, inputs: dict[str, Any], fmt: str) -> Nod
         arr = art.audio
         save_arr = arr.T if arr.ndim == 2 else arr[:, None]
         save_audio(str(path), np.asfortranarray(save_arr), art.sample_rate, target_fmt, audio_params)
-        saved.append(str(path))
-    return NodeResult(outputs={}, saved_paths=saved)
+        saved_path = str(path)
+        saved.append(saved_path)
+        records.append(
+            DAGOutputRecord(
+                path=saved_path,
+                stem=art.stem_name or "",
+                node_id=ctx.current_node_id,
+                node_type="SaveAudio",
+                sample_rate=art.sample_rate,
+                format=target_fmt,
+                source_path=str(art.source_path or ""),
+            )
+        )
+    return NodeResult(outputs={}, saved_paths=saved, saved_records=records)
 
 
 # ---------------------------------------------------------------------------

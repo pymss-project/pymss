@@ -41,15 +41,21 @@ def _load_nodes():
 
 
 @pytest.fixture
-def tone_file(tmp_path):
-    """Write a short stereo WAV and return its path."""
-    sr = 44100
-    t = np.linspace(0, 0.5, sr // 2, False)
-    mono = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
-    stereo = np.column_stack([mono, mono])
-    p = tmp_path / "in.wav"
-    save_audio(str(p), stereo, sr, "wav", {"wav_bit_depth": "PCM_16"})
-    return str(p)
+def make_audio(tmp_path):
+    def _create(filename="in.wav", sr=44100, duration=0.2, freq=440, channels=2):
+        t = np.linspace(0, duration, int(sr * duration), False)
+        mono = (0.3 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+        data = np.column_stack([mono] * channels) if channels > 1 else mono[:, None]
+        p = tmp_path / filename
+        save_audio(str(p), data, sr, "wav", {"wav_bit_depth": "PCM_16"})
+        return str(p)
+
+    return _create
+
+
+@pytest.fixture
+def tone_file(make_audio):
+    return make_audio("in.wav")
 
 
 # ---------------------------------------------------------------------------
@@ -287,43 +293,92 @@ def _make_runtime_flow(widgets):
             "nodes": nodes, "links": links}
 
 
-def test_runtime_input_name_hits_mapping(tone_file, tmp_path):
-    """input_name resolves through the run_dag inputs mapping."""
+def test_runtime_input_name_hits_mapping(make_audio, tmp_path):
     dag = load_comfy_graph(_make_runtime_flow([["placeholder.wav", "lead"], ["other.wav", "backing"]]))
-    second = _write_second_tone(tmp_path)
-    saved = run_dag(dag, output_dir=str(tmp_path / "out"),
-                    inputs={"lead": tone_file, "backing": second})
+    lead = make_audio("lead.wav", freq=440)
+    backing = make_audio("backing.wav", freq=330)
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"lead": lead, "backing": backing})
     assert len(saved) == 2
 
 
 def test_runtime_input_name_declared_but_missing_fails(tone_file, tmp_path):
-    """A declared input_name the host did not provide is an explicit error."""
     dag = load_comfy_graph(_make_runtime_flow([["placeholder.wav", "lead"]]))
     with pytest.raises(DAGError, match="lead"):
         run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"other": tone_file})
 
 
 def test_no_placeholder_fallback(tone_file, tmp_path):
-    """A widget that is neither a path, an inputs key, nor a named slot errors
-    out instead of silently consuming input_path/input_paths."""
     dag = load_comfy_graph(_make_runtime_flow([["in.wav", ""]]))
     with pytest.raises(DAGError, match="not an existing file"):
         run_dag(dag, output_dir=str(tmp_path / "out"), input_path=tone_file)
 
 
 def test_audio_widget_as_inputs_key(tone_file, tmp_path):
-    """Legacy single-slot graphs: the audio widget itself is the inputs key."""
     dag = load_comfy_graph(_make_runtime_flow([["lead", ""]]))
     saved = run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"lead": tone_file})
     assert len(saved) == 1
 
 
-def _write_second_tone(tmp_path):
-    import numpy as np
-    from pymss import save_audio
-    sr = 44100
-    t = np.linspace(0, 0.3, sr * 3 // 10, False)
-    mono = (0.2 * np.sin(2 * np.pi * 330 * t)).astype(np.float32)
-    p = tmp_path / "second.wav"
-    save_audio(str(p), np.column_stack([mono, mono]), sr, "wav", {"wav_bit_depth": "PCM_16"})
-    return str(p)
+def test_dag_with_48k_input_and_target_rate(make_audio, tmp_path):
+    dag = load_comfy_graph(_make_runtime_flow([["lead", ""]]))
+    in_48k = make_audio("in_48k.wav", sr=48000, duration=0.2)
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"lead": in_48k})
+    assert len(saved) == 1
+    assert saved.records[0].sample_rate == 44100
+
+
+def test_safe_filename_part_supports_unicode():
+    from pymss.graph.core import safe_filename_part
+    assert safe_filename_part("小蓝背心 - 灯火通明") == "小蓝背心 - 灯火通明"
+    assert safe_filename_part("日本語の曲_track01") == "日本語の曲_track01"
+    assert safe_filename_part("song:name?*<>|") == "song_name"
+    assert safe_filename_part("CON") == "_CON"
+    assert safe_filename_part("   ") == "audio"
+
+
+def test_separation_output_uses_model_sample_rate():
+    from pymss.graph.nodes import _run_separation, AudioArtifact
+    from pymss.graph.core import NodeContext, DAGNode, SeparatorCache
+    from types import SimpleNamespace
+
+    audio_in = AudioArtifact(np.zeros((2, 4800), dtype=np.float32), sample_rate=48000)
+
+    class FakeSeparator:
+        def __init__(self):
+            self.config = SimpleNamespace(audio={"sample_rate": 44100})
+            self.progress_callback = None
+
+        def separate(self, mix, pbar=False, stems=None):
+            return {"vocals": np.zeros((2, 4410), dtype=np.float32)}
+
+    ctx = NodeContext(Path("."), None, False, None, SeparatorCache())
+    node = DAGNode(id=1, type="mss_separate", inputs=[])
+    results, out_sr = _run_separation(ctx, node, audio_in, build_separator=FakeSeparator, stems=["vocals"])
+    assert out_sr == 44100
+    assert "vocals" in results
+
+
+def test_run_dag_returns_structured_records(tone_file, tmp_path):
+    from pymss.graph import DAGExecutionResult, DAGOutputRecord
+
+    dag = load_comfy_graph(_make_runtime_flow([["lead", ""]]))
+    saved = run_dag(dag, output_dir=str(tmp_path / "out"), inputs={"lead": tone_file})
+
+    assert isinstance(saved, list)
+    assert isinstance(saved, DAGExecutionResult)
+    assert len(saved) == 1
+    assert isinstance(saved[0], str)
+
+    assert hasattr(saved, "records")
+    assert len(saved.records) == 1
+    record = saved.records[0]
+    assert isinstance(record, DAGOutputRecord)
+    assert record.path == saved[0]
+    assert record.format == "wav"
+    assert record.sample_rate == 44100
+    assert record.node_type == "pymss_save_audio"
+
+    record_dict = record.to_dict()
+    assert record_dict["path"] == record.path
+    assert record_dict["format"] == "wav"
+

@@ -491,6 +491,8 @@ def _parse_download_payload(payload):
         raise APIError(400, "invalid_request", "timeout_seconds must be a number.", param="timeout_seconds")
     if timeout <= 0:
         raise APIError(400, "invalid_request", "timeout_seconds must be greater than 0.", param="timeout_seconds")
+    if timeout.is_integer():
+        timeout = int(timeout)
     return str(model), source, endpoint, force, verify, timeout
 
 

@@ -216,12 +216,54 @@ class DAGNode:
     _explicit_order: int | None = None
 
 
+@dataclass(frozen=True)
+class DAGOutputRecord:
+    """A single artifact written to disk by a graph output node."""
+
+    path: str
+    stem: str = ""
+    node_id: object = None
+    node_type: str = ""
+    sample_rate: int = 0
+    format: str = ""
+    source_path: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "stem": self.stem,
+            "node_id": str(self.node_id) if self.node_id is not None else "",
+            "node_type": self.node_type,
+            "sample_rate": self.sample_rate,
+            "format": self.format,
+            "source_path": self.source_path,
+            "name": Path(self.path).name,
+        }
+
+
+class DAGExecutionResult(list):
+    """Execution result list that preserves backwards-compatibility.
+
+    Acts as a standard list[str] of file paths for legacy callers,
+    while exposing structured metadata via `.records` and `.by_stem`.
+    """
+
+    def __init__(self, saved_paths: list[str], records: list[DAGOutputRecord] | None = None):
+        super().__init__(saved_paths)
+        self.records: list[DAGOutputRecord] = list(records or [])
+        self._by_stem: dict[str, DAGOutputRecord] = {r.stem: r for r in self.records if r.stem}
+
+    def by_stem(self, stem: str) -> DAGOutputRecord | None:
+        return self._by_stem.get(stem)
+
+
 @dataclass
 class NodeResult:
     """What a node executor returns."""
 
     outputs: dict[int, Artifact] = field(default_factory=dict)
     saved_paths: list[str] = field(default_factory=list)
+    saved_records: list[DAGOutputRecord] = field(default_factory=list)
 
 
 @dataclass
@@ -396,10 +438,22 @@ def string_value(artifact: Artifact) -> str:
     raise DAGError(f"expected a STRING input, got {type(artifact).__name__}")
 
 
+_INVALID_FILENAME_CHARS = re.compile(r'[\x00-\x1f<>:"/\\|?*]+')
+_WINDOWS_RESERVED_NAMES = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+})
+
+
 def safe_filename_part(value: str) -> str:
     text = str(value or "").strip()
-    cleaned = re.sub(r"[^A-Za-z0-9_.\-]+", "_", text).strip("._")
-    return cleaned or "audio"
+    cleaned = _INVALID_FILENAME_CHARS.sub("_", text).strip(" ._")
+    if not cleaned:
+        return "audio"
+    if cleaned.upper().split(".", 1)[0] in _WINDOWS_RESERVED_NAMES:
+        cleaned = f"_{cleaned}"
+    return cleaned
 
 
 def ctx_node_of(ctx: NodeContext, node_type: str) -> DAGNode:
@@ -546,6 +600,7 @@ def run_dag(
         total = len(order)
         results: dict[object, NodeResult] = {}
         saved: list[str] = []
+        all_records: list[DAGOutputRecord] = []
 
         for index, node in enumerate(order):
             if (
@@ -602,11 +657,12 @@ def run_dag(
             result = node_info.execute(ctx, gathered)
             results[node.id] = result
             saved.extend(result.saved_paths)
+            all_records.extend(result.saved_records)
 
             if progress_callback is not None:
                 progress_callback(index + 1, total, f"node={node.id} type={node.type}")
 
-        return saved
+        return DAGExecutionResult(saved, records=all_records)
     finally:
         if owns_cache:
             cache.close()
@@ -654,6 +710,8 @@ __all__ = [
     "DAGError",
     "DAGLink",
     "DAGNode",
+    "DAGOutputRecord",
+    "DAGExecutionResult",
     "MSS_PARAMS",
     "NodeContext",
     "NodeResult",

@@ -42,6 +42,7 @@ from .core import (
     AudioArtifact,
     DAGError,
     DAGNode,
+    DAGOutputRecord,
     MSS_PARAMS,
     NodeContext,
     NodeResult,
@@ -142,7 +143,7 @@ def _run_separation(
     *,
     build_separator: Any,
     stems: list[str],
-) -> dict[str, np.ndarray]:
+) -> tuple[dict[str, np.ndarray], int]:
     """Drive one ``MSSeparator.separate`` call under inference_mode and progress."""
 
     mix, sample_rate = audio_to_numpy(audio)
@@ -168,7 +169,7 @@ def _run_separation(
             pass
         results = separator.separate(model_audio, pbar=False, stems=None)
 
-    return {stem: np.asarray(arr, dtype=np.float32) for stem, arr in results.items()}
+    return {stem: np.asarray(arr, dtype=np.float32) for stem, arr in results.items()}, sample_rate
 
 
 def _to_samples_first(channel_first: np.ndarray) -> np.ndarray:
@@ -445,6 +446,7 @@ def _execute_save_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
 
     audios = audio_input if isinstance(audio_input, list) else [audio_input]
     saved: list[str] = []
+    records: list[DAGOutputRecord] = []
     for index, artifact in enumerate(audios):
         if not isinstance(artifact, AudioArtifact):
             raise DAGError("pymss_save_audio received a non-AUDIO value in its list input")
@@ -461,8 +463,20 @@ def _execute_save_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
         name = _build_save_filename(filename_hint, artifact, index, len(audios), output_format, prefix=ctx.name_prefix)
         target = target_dir / name
         save_audio(str(target), np.asfortranarray(save_audio_array), sr, output_format, audio_params)
-        saved.append(str(target))
-    return NodeResult(outputs={}, saved_paths=saved)
+        saved_path = str(target)
+        saved.append(saved_path)
+        records.append(
+            DAGOutputRecord(
+                path=saved_path,
+                stem=artifact.stem_name or "",
+                node_id=ctx.current_node_id,
+                node_type="pymss_save_audio",
+                sample_rate=sr,
+                format=output_format,
+                source_path=str(artifact.source_path or ""),
+            )
+        )
+    return NodeResult(outputs={}, saved_paths=saved, saved_records=records)
 
 
 def _build_save_filename(hint: str, artifact: AudioArtifact, index: int, total: int, ext: str, *, prefix: str = "") -> str:
@@ -748,7 +762,7 @@ def _execute_separate(kind: str, *, is_list: bool):
         all_audio_results: list[AudioArtifact] = []
         all_stem_names: list[StringArtifact] = []
         for audio in audios:
-            results = _run_separation(ctx, node, audio, build_separator=factory, stems=stems_for_run)
+            results, output_sample_rate = _run_separation(ctx, node, audio, build_separator=factory, stems=stems_for_run)
             claimed: set[str] = set()
             for stem in stems_for_run:
                 value = results.get(stem)
@@ -770,7 +784,7 @@ def _execute_separate(kind: str, *, is_list: bool):
                     )
                 if value is not None:
                     claimed.add(next((k for k, v in results.items() if v is value), stem))
-                artifact = numpy_to_audio(np.asarray(value, dtype=np.float32), audio.sample_rate, stem_name=stem, source_path=audio.source_path)
+                artifact = numpy_to_audio(np.asarray(value, dtype=np.float32), output_sample_rate, stem_name=stem, source_path=audio.source_path)
                 all_audio_results.append(artifact)
                 all_stem_names.append(StringArtifact(stem))
 
