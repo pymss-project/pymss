@@ -13,7 +13,7 @@ from time import time
 from tqdm import tqdm
 
 from .audio_io import load_audio, save_audio
-from .utils import clear_mlx_cache, demix, get_model_from_config
+from .utils import _resolve_use_amp, clear_mlx_cache, demix, get_model_from_config
 from .logger import get_separation_logger, set_log_level
 from .config import AttrDict
 
@@ -1148,7 +1148,7 @@ class MSSeparator:
                 f"MSS model params: chunk_size: {config.audio.get('chunk_size', config.inference.get('chunk_size', None))}, overlap_size: {config.inference.get('overlap_size', None)}, stem_batch_size: {config.inference.get('stem_batch_size', None)}"
             )
             self.logger.debug(
-                f"MSS model params: mask_mode: {config.inference.get('mask_mode', None)}, cuda_attention_backend: {config.inference.get('cuda_attention_backend', None)}, mps_attention_backend: {config.inference.get('mps_attention_backend', None)}, mps_mlx_min_tokens: {config.inference.get('mps_mlx_min_tokens', None)}, mps_model_backend: {config.inference.get('mps_model_backend', None)}, mps_model_compute_dtype: {config.inference.get('mps_model_compute_dtype', None)}"
+                f"MSS model params: use_amp: {_resolve_use_amp(config)}, mask_mode: {config.inference.get('mask_mode', None)}, cuda_attention_backend: {config.inference.get('cuda_attention_backend', None)}, mps_attention_backend: {config.inference.get('mps_attention_backend', None)}, mps_mlx_min_tokens: {config.inference.get('mps_mlx_min_tokens', None)}, mps_model_backend: {config.inference.get('mps_model_backend', None)}, mps_model_compute_dtype: {config.inference.get('mps_model_compute_dtype', None)}"
             )
 
     def apply_model_inference_config(self, model, config):

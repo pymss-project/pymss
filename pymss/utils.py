@@ -310,6 +310,14 @@ def _autocast(device, enabled):
     return nullcontext()
 
 
+def _resolve_use_amp(config):
+    """Resolve the effective AMP setting for PyTorch inference."""
+    use_amp = config.inference.get("use_amp")
+    if use_amp is not None:
+        return bool(use_amp)
+    return bool(config.training.get("use_amp", True))
+
+
 def _source_names(config):
     """Implement the source names helper.
 
@@ -997,7 +1005,7 @@ def demix_track(config, model, mix, device, pbar=False, source_indices=None, pro
     use_complete_fast_path = device_type in ("cuda", "cpu")
     mix_device = _model_mix(mix, device)
 
-    with _autocast(device, config.training.get("use_amp", True)):
+    with _autocast(device, _resolve_use_amp(config)):
         with torch.inference_mode():
             result, counter = _init_overlap_buffers(config, mix, device, use_complete_fast_path, source_indices)
             progress = _ProgressContext(pbar, mix.shape[1], progress_callback, sample_rate=sample_rate)
@@ -1074,7 +1082,7 @@ def demix_track_demucs(config, model, mix, device, pbar=False, source_indices=No
     batch_size = config.inference.batch_size
     step = _get_inference_step(config, C)
 
-    with _autocast(device, config.training.get("use_amp", True)):
+    with _autocast(device, _resolve_use_amp(config)):
         with torch.inference_mode():
             req_shape = (_source_count(config, source_indices),) + tuple(mix.shape)
             result = torch.zeros(req_shape, dtype=torch.float32)
@@ -1147,7 +1155,7 @@ def demix(
             message="Processing audio",
         )
         progress.emit(0)
-        with _autocast(device, config.training.get("use_amp", True)):
+        with _autocast(device, _resolve_use_amp(config)):
             with torch.inference_mode():
                 estimates = (
                     apply_legacy_model(
