@@ -96,8 +96,13 @@ def _resolve_public_device(device, inference_params, logger):
         inference_params.setdefault("mps_mlx_clear_cache", True)
         logger.debug("Mapping device='mlx' to device='mps' with MLX full model backend")
         return "mps", inference_params
+    if requested_device == "rocm":
+        if not torch.cuda.is_available():
+            raise RuntimeError("device='rocm' requires a ROCm-enabled PyTorch build with a visible HIP device")
+        logger.debug("Mapping device='rocm' to device='cuda' (ROCm PyTorch exposes HIP devices as cuda)")
+        return "cuda", inference_params
     if requested_device not in {"auto", "cpu", "cuda", "mps"}:
-        raise ValueError("device must be 'auto', 'cpu', 'cuda', 'mps', or 'mlx'")
+        raise ValueError("device must be 'auto', 'cpu', 'cuda', 'mps', 'rocm', or 'mlx'")
     return requested_device, inference_params
 
 
@@ -113,7 +118,10 @@ def _select_device(device, device_ids, logger):
         Any: Computed result."""
     if device not in ["cpu", "cuda", "mps"]:
         if torch.cuda.is_available():
-            logger.debug("CUDA is available in Torch, setting Torch device to CUDA")
+            if getattr(torch.version, "hip", None):
+                logger.debug("ROCm/HIP device is available in Torch, setting Torch device to CUDA device (backed by ROCm)")
+            else:
+                logger.debug("CUDA is available in Torch, setting Torch device to CUDA")
             return f"cuda:{device_ids[0]}"
         if torch.backends.mps.is_available():
             logger.debug("Apple Silicon MPS/CoreML is available in Torch, setting Torch device to MPS")
@@ -662,8 +670,10 @@ class MSSeparator:
             VR models use built-in metadata instead of an MSS YAML config.
             Defaults to None.
         device (str, optional): Runtime device. Valid values are ``auto``,
-            ``cpu``, ``cuda``, ``mps``, and ``mlx``. ``auto`` chooses CUDA
-            first, then Apple MPS, then CPU. ``mlx`` is a public shortcut for
+            ``cpu``, ``cuda``, ``rocm``, ``mps``, and ``mlx``. ``auto`` chooses CUDA
+            first, then Apple MPS, then CPU. ``rocm`` is a public shortcut for
+            AMD ROCm GPUs and maps to the ``cuda`` device path (ROCm PyTorch
+            exposes HIP devices as ``cuda``). ``mlx`` is a public shortcut for
             Apple Silicon MLX execution through the MPS device path. Defaults
             to ``"auto"``.
         device_ids (list[int], optional): CUDA device IDs. Multiple IDs can
@@ -766,7 +776,7 @@ class MSSeparator:
             config_path (str | os.PathLike | None, optional): YAML config path.
                 If omitted, pymss tries ``model_path + ".yaml"``. Defaults to
                 None.
-            device (str, optional): ``auto``, ``cpu``, ``cuda``, ``mps``, or
+            device (str, optional): ``auto``, ``cpu``, ``cuda``, ``rocm``, ``mps``, or
                 ``mlx``. Defaults to ``"auto"``.
             device_ids (list[int], optional): CUDA device IDs used when CUDA
                 and DataParallel are available. Defaults to ``[0]``.
