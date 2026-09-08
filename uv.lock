@@ -1407,7 +1407,7 @@ wheels = [
 
 [[package]]
 name = "pymss"
-version = "2.1.4"
+version = "2.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
