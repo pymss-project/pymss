@@ -11,6 +11,23 @@ If you want the CUDA build of PyTorch, install it first:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
+### AMD ROCm
+
+
+```sh
+pip install torch --index-url https://download.pytorch.org/whl/rocm7.2
+pip install pymss
+```
+
+**Windows:** native support starts with ROCm 7.2.1 (Adrenalin 26.2.2+ driver, Python 3.12). Install the AMD wheels by direct URL, then pymss:
+
+```bat
+pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl
+pip install pymss
+```
+
+WSL2 (RDNA3/RDNA4) can follow the Linux steps instead.
+
 For CLI and Python API usage, install:
 
 ```sh
@@ -318,7 +335,7 @@ For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator
 
 ### CUDA Attention Backend
 
-RoFormer-family models default to cuDNN attention on CUDA when the installed PyTorch build exposes it, otherwise they use PyTorch's default SDPA path. Override with `inference_params={"cuda_attention_backend": "auto"}` if you want fallback probing. Valid values are `auto`, `default`, `flash`, `cudnn`, `efficient`, `math`, and `xformers`. `auto` tries cuDNN attention first, then PyTorch memory-efficient SDPA, then PyTorch default SDPA. `xformers` is optional and only used if installed locally; it is not a required dependency.
+RoFormer-family models default to cuDNN attention on CUDA when the installed PyTorch build exposes it, and to the memory-efficient SDPA backend (AOTriton) on ROCm/HIP; otherwise they use PyTorch's default SDPA path. Override with `inference_params={"cuda_attention_backend": "auto"}` if you want fallback probing. Valid values are `auto`, `default`, `flash`, `cudnn`, `efficient`, `math`, and `xformers`. `auto` tries cuDNN attention first, then PyTorch memory-efficient SDPA, then PyTorch default SDPA. `xformers` is optional and only used if installed locally; it is not a required dependency.
 
 ### Apple Silicon MLX Backend
 

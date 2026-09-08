@@ -10,6 +10,22 @@
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
+### AMD ROCm
+
+```sh
+pip install torch --index-url https://download.pytorch.org/whl/rocm7.2
+pip install pymss
+```
+
+**Windows：** 原生支持自 ROCm 7.2.1 起（Adrenalin 26.2.2+ 驱动、Python 3.12）。直链安装 AMD 官方 wheel 后再装 pymss：
+
+```bat
+pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl
+pip install pymss
+```
+
+WSL2（RDNA3/RDNA4）可改在 Ubuntu 子系统里按上面的 Linux 步骤安装。
+
 如果只需要 CLI 和 Python API，安装：
 
 ```sh
@@ -291,7 +307,7 @@ with separator as s:
 
 ### CUDA Attention 后端
 
-RoFormer 系列模型在已安装 PyTorch 暴露 cuDNN attention 时默认使用 cuDNN attention，否则使用 PyTorch 默认 SDPA 路径。需要探测式回退时可通过 `inference_params={"cuda_attention_backend": "auto"}` 覆盖。可选值为 `auto`、`default`、`flash`、`cudnn`、`efficient`、`math` 和 `xformers`。`auto` 会优先尝试 cuDNN attention，然后回退到 PyTorch memory-efficient SDPA，再回退到 PyTorch 默认 SDPA。`xformers` 是本地可选安装项，不作为必需依赖。
+RoFormer 系列模型在已安装 PyTorch 暴露 cuDNN attention 时默认使用 cuDNN attention，在 ROCm/HIP 上默认使用 memory-efficient SDPA 后端（AOTriton），否则使用 PyTorch 默认 SDPA 路径。需要探测式回退时可通过 `inference_params={"cuda_attention_backend": "auto"}` 覆盖。可选值为 `auto`、`default`、`flash`、`cudnn`、`efficient`、`math` 和 `xformers`。`auto` 会优先尝试 cuDNN attention，然后回退到 PyTorch memory-efficient SDPA，再回退到 PyTorch 默认 SDPA。`xformers` 是本地可选安装项，不作为必需依赖。
 
 ### Apple Silicon MLX 后端
 
