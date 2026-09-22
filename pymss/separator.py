@@ -333,16 +333,16 @@ def _infer_mel_band_roformer_mlp_hidden_layers(state_dict):
     return len(layer_indices) - 1
 
 
-def _store_torch_model_on_cpu_for_mlx(config, device):
-    """Implement the store torch model on cpu for mlx helper.
+def _store_torch_model_on_cpu_for_mlx(model, device):
+    """Keep weights on CPU only when the model actually uses full MLX inference.
 
     Args:
-        config (AttrDict | dict): Loaded pymss configuration.
+        model (torch.nn.Module): Model after runtime backend selection.
         device (Any): Device value.
 
     Returns:
         Any: Computed result."""
-    return torch.device(device).type == "mps" and config.inference.get("mps_model_backend", "torch") == "mlx_full"
+    return torch.device(device).type == "mps" and getattr(model, "mps_model_backend", "torch") == "mlx_full"
 
 
 def _coerce_mps_float64(module):
@@ -1113,7 +1113,7 @@ class MSSeparator:
         if torch.device(self.device).type == "cpu":
             _coerce_cpu_low_precision(model)
 
-        keep_torch_model_cpu = _store_torch_model_on_cpu_for_mlx(config, self.device)
+        keep_torch_model_cpu = _store_torch_model_on_cpu_for_mlx(model, self.device)
         if len(self.device_ids) > 1 and not keep_torch_model_cpu:
             model = torch.nn.DataParallel(model, device_ids=self.device_ids)
         model = model.to("cpu" if keep_torch_model_cpu else self.device)
@@ -1187,6 +1187,12 @@ class MSSeparator:
             for module in model.modules():
                 if hasattr(module, "set_mps_model_backend"):
                     module.set_mps_model_backend(model_backend, compute_dtype)
+            effective_backend = getattr(model, "mps_model_backend", "torch")
+            if effective_backend != model_backend:
+                self.logger.warning(
+                    f"Requested MPS model backend {model_backend!r} is unavailable for "
+                    f"{type(model).__name__}; using {effective_backend!r}"
+                )
         backend = config.inference.get("mps_attention_backend", None)
         min_tokens = config.inference.get("mps_mlx_min_tokens", 128)
         if backend is not None:

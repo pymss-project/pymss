@@ -327,6 +327,8 @@ separator = MSSeparator.from_model_name(
 
 ### 模型兼容性
 
+BS PolarFormer checkpoint 使用 `model_type="bs_roformer"`，匹配的 YAML 配置需保留 `model.use_pope: true`。无需单独安装 PoPE 或 Triton 包；这类模型的 MLX 后端请求会回退到 PyTorch。
+
 配置为 `model: htdemucs` 且 `htdemucs.cac: true` 的 HTDemucs checkpoint 通过 `model_type='htdemucs'` 支持。
 
 旧 Demucs/TasNet `.th` 权重可以使用 `model_type='legacy_demucs'` 或 `model_type='legacy_tasnet'`，不需要 MSST YAML 配置。当前无外部依赖 legacy loader 支持 classic Demucs、v3 time-domain Demucs、ConvTasNet、CaC HDemucs、package 形式 HTDemucs、multi-frequency CaC HDemucs 和简单 Demucs bag YAML。DiffQ 量化 checkpoint 和 non-CaC/Wiener HDemucs 仍需要专门的旧模型加载器。

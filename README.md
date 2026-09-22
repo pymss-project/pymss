@@ -355,6 +355,8 @@ On Apple Silicon, `pyproject.toml` installs `mlx>=0.31.0` for this backend. If M
 
 ### Model Compatibility
 
+BS PolarFormer checkpoints use `model_type="bs_roformer"` with `model.use_pope: true` in the matching YAML configuration. No separate PoPE or Triton package is required; MLX backend requests for these models fall back to PyTorch.
+
 HTDemucs checkpoints whose config uses `model: htdemucs` and `htdemucs.cac: true` are supported through `model_type='htdemucs'`.
 
 Legacy Demucs/TasNet `.th` weights can use `model_type='legacy_demucs'` or `model_type='legacy_tasnet'` without a MSST YAML config. The dependency-free legacy loader supports classic Demucs, v3 time-domain Demucs, ConvTasNet, CaC HDemucs, package-style HTDemucs, multi-frequency CaC HDemucs, and simple Demucs bag YAML files. DiffQ-quantized checkpoints and non-CaC/Wiener HDemucs still need a dedicated legacy loader.
