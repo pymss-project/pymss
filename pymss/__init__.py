@@ -8,6 +8,8 @@ importing submodules directly.
 Exports:
     MSSeparator: Main runtime class for loading separation models and producing
         stems. Prefer ``MSSeparator.from_model_name(...)`` for catalog models.
+    ModelTypeDetectionError: RuntimeError subclass for architecture detection failures.
+    detect_model_type: Detect an architecture from a loaded YAML configuration.
     get_separation_logger: Create or reuse the package logger.
     create_separator: Create ``MSSeparator`` from a catalog model name.
     get_model_entry: Resolve catalog metadata for one model name or alias.
@@ -45,6 +47,7 @@ Example:
 """
 
 from .separator import MSSeparator
+from pymss_core import ModelTypeDetectionError, detect_model_type
 from .logger import get_separation_logger
 from .model_registry import create_separator, get_model_entry, list_models, register_model, resolve_model, unregister_model
 from .model_download import ProxyError, download_model
@@ -67,6 +70,8 @@ _register_builtin_codecs()
 
 __all__ = (
     "MSSeparator",
+    "ModelTypeDetectionError",
+    "detect_model_type",
     "get_separation_logger",
     "create_separator",
     "get_model_entry",

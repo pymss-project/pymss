@@ -250,7 +250,7 @@ with MSSeparator.from_model_name(
 from pymss import MSSeparator, get_separation_logger
 # 初始化
 separator = MSSeparator(
-    model_type='htdemucs',
+    model_type='auto',
     model_path='path/to/model',
     config_path='path/to/config',
     device='cuda',
@@ -276,11 +276,14 @@ separator = MSSeparator(
 with separator as s:
     s.process_folder('path/to/input_file_or_folder')
 ```
+
+`model_type="auto"` 通过 pymss-core 根据 YAML 配置识别架构，支持显式架构声明，以及可识别的 BS/Mel RoFormer 与 Conformer、HTDemucs、MDX23C、SCNet、Apollo、Bandit v1/v2 配置。BS PolarFormer 沿用 `bs_roformer`；HyperACE 在加载时进一步根据权重键区分。未知或存在歧义的配置会在加载权重前抛出 `ModelTypeDetectionError`（继承 `RuntimeError`），此时需手动指定 `model_type`。没有 YAML 的 VR 和旧版模型需要显式指定类型。
+
 ### 手动构造参数
 
 每个 `MSSeparator` 参数的详细说明见 [MSSeparator 参数文档](./docs/msseparator_cn.md)。
 
-- model_type: 模型类型，例如 'htdemucs'。 必须是以下之一
+- model_type: 使用 'auto' 根据 YAML 识别架构，或手动指定类型，例如 'htdemucs'。显式类型包括
     ['bs_roformer',
     'bs_conformer',
     'mel_band_roformer',

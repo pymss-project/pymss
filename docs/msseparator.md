@@ -54,7 +54,7 @@ separator = MSSeparator.from_model_name("my_bs")
 
 ```python
 separator = MSSeparator(
-    model_type="htdemucs",
+    model_type="auto",
     model_path="path/to/model",
     config_path="path/to/config.yaml",
     device="auto",
@@ -85,11 +85,13 @@ separator = MSSeparator(
 )
 ```
 
+`model_type="auto"` delegates YAML architecture detection to pymss-core before loading weights. Explicit YAML architecture declarations take precedence over structural hints. Conflicting or insufficient information raises `ModelTypeDetectionError` (a `RuntimeError` subclass); use an explicit architecture to override detection. The detector recognizes BS/Mel RoFormer and Conformer, HTDemucs, MDX23C, SCNet, Apollo, and Bandit v1/v2 configuration layouts. BS PolarFormer uses `bs_roformer`, and HyperACE is refined from checkpoint keys. Configurations that omit identifying fields can still require manual selection. VR and legacy models without YAML require an explicit type.
+
 ## Constructor Parameters
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `model_type` | `str` | required | Model architecture/runtime type. Common values include `bs_roformer`, `bs_conformer`, `mel_band_roformer`, `mel_band_conformer`, `htdemucs`, `mdx23c`, `bandit`, `bandit_v2`, `scnet`, `apollo`, `vr`, `legacy_demucs`, and `legacy_tasnet`. Catalog users normally do not set this manually. |
+| `model_type` | `str` | required | `auto` for YAML detection, or an explicit model architecture/runtime type. Common values include `bs_roformer`, `bs_conformer`, `mel_band_roformer`, `mel_band_conformer`, `htdemucs`, `mdx23c`, `bandit`, `bandit_v2`, `scnet`, `apollo`, `vr`, `legacy_demucs`, and `legacy_tasnet`. Catalog users normally do not set this manually. |
 | `model_path` | `str` | required | Path to the model weights file. The extension depends on the model family, for example `.ckpt`, `.th`, or `.pth`. |
 | `config_path` | `str \| None` | `None` | YAML config path for MSS-style models. If omitted, pymss tries `model_path + ".yaml"`. VR models are loaded from built-in VR metadata and do not use an MSS YAML config. |
 | `device` | `str` | `"auto"` | Runtime device. Valid values are `auto`, `cpu`, `cuda`, `mps`, and `mlx`. `auto` chooses CUDA first, then Apple MPS, then CPU. `mlx` is a public shortcut for the Apple Silicon MLX backend and internally runs through `device="mps"` with MLX model settings. |

@@ -277,7 +277,7 @@ from pymss import MSSeparator, get_separation_logger
 
 # init
 separator = MSSeparator(
-    model_type='htdemucs', 
+    model_type='auto',
     model_path='path/to/model',
     config_path='path/to/config',
     device='cuda',
@@ -304,11 +304,13 @@ with separator as s:
     s.process_folder('path/to/input_file_or_folder')
 ```
 
+`model_type="auto"` detects the architecture from the YAML configuration using pymss-core. It supports explicit architecture declarations and recognized configurations for BS/Mel RoFormer and Conformer, HTDemucs, MDX23C, SCNet, Apollo, and Bandit v1/v2. BS PolarFormer uses `bs_roformer`; HyperACE is refined from checkpoint keys during loading. Unknown or ambiguous configurations raise `ModelTypeDetectionError` (a `RuntimeError` subclass) before weights are loaded; specify `model_type` manually in that case. VR and legacy models without YAML require an explicit type.
+
 ### Manual Constructor Parameters
 
 For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator parameter guide](./docs/msseparator.md).
 
-- model_type: The type of model, e.g., 'htdemucs'. Must be one of 
+- model_type: Use 'auto' for YAML-based detection, or specify an architecture, e.g., 'htdemucs'. Explicit types include
     ['bs_roformer', 
     'bs_conformer',
     'mel_band_roformer', 

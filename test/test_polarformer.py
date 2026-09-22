@@ -33,10 +33,12 @@ def polarformer_files(tmp_path):
     return model_path, config_path
 
 
-def test_separator_loads_pope_weights_and_preserves_stem_configuration(polarformer_files):
+@pytest.mark.parametrize("model_type", ["bs_roformer", "auto"])
+def test_separator_loads_pope_weights_and_preserves_stem_configuration(polarformer_files, model_type):
     model_path, config_path = polarformer_files
-    with MSSeparator(model_type="bs_roformer", model_path=model_path, config_path=config_path,
+    with MSSeparator(model_type=model_type, model_path=model_path, config_path=config_path,
                      device="cpu", store_dirs={}, logger=logging.getLogger(__name__)) as separator:
+        assert separator.model_type == "bs_roformer"
         assert separator.config.training.instruments == ["lead", "back_instrum"]
         assert separator.config.training.target_instrument == "lead"
         assert separator.config.audio.chunk_size == 128

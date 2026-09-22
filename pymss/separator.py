@@ -7,6 +7,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import torch
 import numpy as np
+from yaml import YAMLError
 import platform
 import subprocess
 from time import time
@@ -15,7 +16,8 @@ from tqdm import tqdm
 from .audio_io import load_audio, save_audio
 from .utils import _resolve_use_amp, clear_mlx_cache, demix, get_model_from_config
 from .logger import get_separation_logger, set_log_level
-from .config import AttrDict
+from .config import AttrDict, load_config
+from pymss_core import ModelTypeDetectionError, detect_model_type
 
 
 INFERENCE_PARAM_TARGETS = {
@@ -658,7 +660,9 @@ class MSSeparator:
     or need full control over runtime parameters.
 
     Args:
-        model_type (str): Model architecture/runtime type. Common values
+        model_type (str): Model architecture/runtime type, or ``auto`` to detect
+            it from the YAML configuration. Unknown or ambiguous configurations
+            raise ``ModelTypeDetectionError`` (a ``RuntimeError``) before loading weights. Common explicit values
             include ``bs_roformer``, ``bs_conformer``, ``mel_band_roformer``,
             ``mel_band_conformer``, ``htdemucs``, ``mdx23c``, ``bandit``,
             ``bandit_v2``, ``scnet``, ``apollo``, ``vr``, ``legacy_demucs``,
@@ -769,7 +773,9 @@ class MSSeparator:
         """Initialize and load a separator from explicit model files.
 
         Args:
-            model_type (str): Runtime model family. Catalog users usually get
+            model_type (str): Runtime model family, or ``auto`` to detect it
+                from YAML. Unknown or ambiguous configurations raise ModelTypeDetectionError.
+                Catalog users usually get
                 this value from ``MSSeparator.from_model_name()`` instead of
                 setting it manually.
             model_path (str | os.PathLike): Model weights path.
@@ -826,13 +832,22 @@ class MSSeparator:
             raise ValueError("model_path is required")
 
         logger = logger if logger is not None else get_separation_logger()
-        device, inference_params = _resolve_public_device(device, inference_params, logger)
 
         self.model_type = model_type
 
         self.model_path = model_path
         self.config_path_given = config_path is not None
-        self.config_path = config_path if config_path else (model_path + ".yaml")
+        self.config_path = config_path if config_path else (os.fspath(model_path) + ".yaml")
+        if self.model_type == "auto":
+            try:
+                model_config = load_config(self.config_path)
+            except (OSError, UnicodeError, YAMLError) as exc:
+                raise ModelTypeDetectionError(
+                    "Cannot determine model_type: auto requires a readable YAML configuration. "
+                    "Check config_path or set model_type explicitly."
+                ) from exc
+            self.model_type = detect_model_type(model_config)
+        device, inference_params = _resolve_public_device(device, inference_params, logger)
         self.output_format = output_format
         self.use_tta = use_tta
         self.store_dirs = store_dirs
