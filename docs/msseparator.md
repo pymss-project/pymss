@@ -227,7 +227,7 @@ success_files = separator.process_folder("songs")
 
 If `input_folder` is a folder, every direct child file in that folder is considered an input candidate. The method does not recursively walk subfolders.
 
-### `separate(mix, pbar=True, stems=None)`
+### `separate(mix, pbar=True, stems=None, *, channel_layout=None)`
 
 Runs separation on an already-loaded audio array and returns a dictionary mapping stem name to audio array.
 
@@ -237,6 +237,27 @@ vocals = results["vocals"]
 ```
 
 `stems` can be `None`, a single stem name, or an iterable of stem names. When `None`, all model stems are returned. When output `normalize=True`, normalization is computed only across the returned stems.
+
+Input arrays use `(samples,)` or `(channels, samples)`; returned arrays normally use `(samples, channels)`.
+
+| Input | Model | Processing and output |
+|---|---|---|
+| Mono | Mono | Separate once and output mono. |
+| Mono | Stereo | Duplicate the input channel, then average the model's output channels to mono. |
+| Stereo | Mono | Separate left and right independently, then recombine them into stereo. |
+| Stereo | Stereo | Preserve stereo processing and output. |
+| More than two channels | Mono | Average all input channels and output mono. |
+| More than two channels | Stereo | Use FFmpeg channel rematrixing through PyAV and output stereo. |
+
+Output normalization runs after the output channels have been assembled, preserving their relative levels. Mono models require two inference passes for stereo inputs; progress includes both passes and any TTA variants.
+
+`process_folder()` uses the file's encoded channel layout when downmixing to stereo. For already-loaded multichannel arrays, `channel_layout` specifies the source ordering (for example, `"5.1(side)"`). Without it, FFmpeg's default layout for the channel count is assumed; counts without a default layout require an explicit value. Apollo accepts mono or stereo natively and downmixes larger inputs to stereo.
+
+For file decoding outside `process_folder()`, `load_audio(path, downmix_stereo=True)` preserves mono/stereo sources and downmixes larger layouts to stereo. The default `load_audio()` behavior continues to preserve all source channels.
+
+`load_audio(path, return_layout=True)` returns `(audio, sample_rate, channel_layout)`; ordinary calls still return two values. Built-in file loaders in both workflow engines retain this layout through channel-preserving operations and pass it to separation. Custom workflow loaders returning `(audio, sample_rate)` retain the existing mono/stereo array orientation detection. The three-value form uses channel-first `(channels, samples)` arrays, or one-dimensional mono audio. Graph callers may set `AudioArtifact.channel_layout` explicitly. Model outputs receive their new mono/stereo layout. Graph operations that combine incompatible multichannel layouts or would truncate multichannel ensemble inputs raise an error instead of discarding channel positions.
+
+When a file has no channel-position metadata, loaders preserve an unspecified layout such as `"3 channels"`. This also applies when librosa decodes successfully but ffprobe is not installed. Mono models can still average those channels. Workflow stereo downmix requires named channel positions and reports an error rather than assuming their ordering.
 
 ### `save_audio(audio, sr, file_name, store_dir)`
 

@@ -28,6 +28,7 @@ from .core import (
     PortSpec,
     STRING,
     StringArtifact,
+    _combined_channel_layout,
     audio_to_numpy,
     numpy_to_audio,
     register_node,
@@ -304,7 +305,9 @@ def _execute_trim_audio(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
     end_frame = max(0, min(start_frame + int(round(duration * sr)), total))
     if start_frame >= end_frame:
         raise DAGError("TrimAudioDuration: start time must be before end time and within audio length")
-    return NodeResult(outputs={0: AudioArtifact(waveform[..., start_frame:end_frame], sr)})
+    return NodeResult(outputs={0: AudioArtifact(
+        waveform[..., start_frame:end_frame], sr, channel_layout=inputs["audio"].channel_layout
+    )})
 
 
 register_node("TrimAudioDuration", signature=_trim_audio_signature, execute=_execute_trim_audio)
@@ -391,10 +394,13 @@ def _execute_audio_concat(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResul
         w1 = np.repeat(w1, 2, axis=0)
     if w2.shape[0] == 1:
         w2 = np.repeat(w2, 2, axis=0)
+    if w1.shape[0] != w2.shape[0]:
+        raise DAGError("AudioConcat requires matching channel counts after mono-to-stereo conversion.")
+    layout = _combined_channel_layout([a1, a2], w1.shape[0])
     w1, w2, out_sr = _match_sample_rates(w1, sr1, w2, sr2)
     direction = string_value(inputs.get("direction", StringArtifact("after")))
     joined = (w1, w2) if direction == "after" else (w2, w1)
-    return NodeResult(outputs={0: AudioArtifact(np.concatenate(joined, axis=-1), out_sr)})
+    return NodeResult(outputs={0: AudioArtifact(np.concatenate(joined, axis=-1), out_sr, channel_layout=layout)})
 
 
 register_node("AudioConcat", signature=_audio_concat_signature, execute=_execute_audio_concat)
@@ -402,13 +408,26 @@ register_node("AudioConcat", signature=_audio_concat_signature, execute=_execute
 
 def _audio_merge_signature(node: DAGNode) -> NodeSignature:
     return NodeSignature(
-        inputs=[PortSpec(name="audio1", type=AUDIO), PortSpec(name="audio2", type=AUDIO), PortSpec(name="merge_method", type="COMBO")],
+        inputs=[
+            PortSpec(name="audio1", type=AUDIO),
+            PortSpec(name="audio2", type=AUDIO),
+            PortSpec(name="merge_method", type="COMBO"),
+            PortSpec(name="normalize", type="BOOLEAN", shape=7),
+        ],
         output_names=["audio"],
         output_types=[AUDIO],
     )
 
 
 def _execute_audio_merge(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
+    """Merge audio with ComfyUI's peak protection enabled by default.
+
+    The optional pymss ``normalize`` input (widget index 1) can disable peak
+    scaling for intermediate arithmetic. Normalize the final result before
+    integer PCM export if it exceeds full scale.
+    """
+    from .nodes import _coerce_bool
+
     a1 = inputs.get("audio1")
     a2 = inputs.get("audio2")
     if a1 is None:
@@ -417,6 +436,7 @@ def _execute_audio_merge(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult
         return NodeResult(outputs={0: a1})
     w1, sr1 = _audio_waveform(a1)
     w2, sr2 = _audio_waveform(a2)
+    layout = _combined_channel_layout([a1, a2], max(w1.shape[0], w2.shape[0]))
     w1, w2, out_sr = _match_sample_rates(w1, sr1, w2, sr2)
     len1, len2 = w1.shape[-1], w2.shape[-1]
     if len2 > len1:
@@ -424,7 +444,12 @@ def _execute_audio_merge(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult
     elif len2 < len1:
         pad = np.zeros((w2.shape[0], len1 - len2), dtype=np.float32)
         w2 = np.concatenate([w2, pad], axis=-1)
-    method = string_value(inputs.get("merge_method", StringArtifact("add")))
+    widgets = ctx.nodes_by_id[ctx.current_node_id].data.get("widgets_values", [])
+    method_value = inputs.get("merge_method")
+    if method_value is None:
+        method_value = widget(widgets, 0, "add")
+    method = string_value(method_value)
+    normalize = _coerce_bool(inputs.get("normalize"), widget(widgets, 1, True))
     if method == "add":
         out = w1 + w2
     elif method == "subtract":
@@ -433,10 +458,11 @@ def _execute_audio_merge(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult
         out = w1 * w2
     else:
         out = (w1 + w2) / 2
-    peak = float(np.abs(out).max()) if out.size else 0.0
-    if peak > 1.0:
-        out = out / peak
-    return NodeResult(outputs={0: AudioArtifact(out, out_sr)})
+    if normalize:
+        peak = float(np.abs(out).max()) if out.size else 0.0
+        if peak > 1.0:
+            out = out / peak
+    return NodeResult(outputs={0: AudioArtifact(out, out_sr, channel_layout=layout)})
 
 
 register_node("AudioMerge", signature=_audio_merge_signature, execute=_execute_audio_merge)
@@ -462,7 +488,7 @@ def _execute_adjust_volume(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResu
     if volume_db == 0:
         return NodeResult(outputs={0: inputs["audio"]})
     gain = 10 ** (volume_db / 20)
-    return NodeResult(outputs={0: AudioArtifact(waveform * gain, sr)})
+    return NodeResult(outputs={0: AudioArtifact(waveform * gain, sr, channel_layout=inputs["audio"].channel_layout)})
 
 
 register_node("AudioAdjustVolume", signature=_adjust_volume_signature, execute=_execute_adjust_volume)
@@ -535,7 +561,9 @@ def _execute_eq(ctx: NodeContext, inputs: dict[str, Any]) -> NodeResult:
         mid_gain_db=mid_gain, mid_freq=mid_freq, mid_q=mid_q,
         high_gain_db=high_gain, high_freq=high_freq,
     )
-    return NodeResult(outputs={0: AudioArtifact(np.asarray(out, dtype=np.float32), sr)})
+    return NodeResult(outputs={0: AudioArtifact(
+        np.asarray(out, dtype=np.float32), sr, channel_layout=inputs["audio"].channel_layout
+    )})
 
 
 register_node("AudioEqualizer3Band", signature=_eq_signature, execute=_execute_eq)

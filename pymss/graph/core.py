@@ -55,6 +55,7 @@ class AudioArtifact:
     sample_rate: int
     source_path: str = ""
     stem_name: str = ""
+    channel_layout: str | None = None
 
     def __post_init__(self) -> None:
         arr = np.asarray(self.audio, dtype=np.float32)
@@ -64,6 +65,15 @@ class AudioArtifact:
             raise ValueError(f"AudioArtifact expects 1D/2D audio, got shape {arr.shape}")
         self.audio = np.ascontiguousarray(arr, dtype=np.float32)
         self.sample_rate = int(self.sample_rate)
+        if self.channel_layout is not None:
+            from av import AudioLayout
+
+            layout = AudioLayout(self.channel_layout)
+            if len(layout.channels) != arr.shape[0]:
+                raise ValueError("Audio channel layout does not match the waveform channel count.")
+            self.channel_layout = layout.name
+        elif arr.shape[0] in (1, 2):
+            self.channel_layout = "mono" if arr.shape[0] == 1 else "stereo"
 
 
 @dataclass
@@ -414,7 +424,7 @@ def audio_to_numpy(audio: Artifact) -> tuple[np.ndarray, int]:
 
 
 def numpy_to_audio(
-    value: np.ndarray, sample_rate: int, *, stem_name: str = "", source_path: str = ""
+    value: np.ndarray, sample_rate: int, *, stem_name: str = "", source_path: str = "", channel_layout: str | None = None
 ) -> AudioArtifact:
     arr = np.asarray(value, dtype=np.float32)
     if arr.ndim == 1:
@@ -425,7 +435,21 @@ def numpy_to_audio(
             arr = arr.T
     else:
         raise DAGError(f"unsupported audio shape {arr.shape}")
-    return AudioArtifact(arr, int(sample_rate), source_path=source_path, stem_name=stem_name)
+    return AudioArtifact(arr, int(sample_rate), source_path=source_path, stem_name=stem_name, channel_layout=channel_layout)
+
+
+def _combined_channel_layout(audios: list[AudioArtifact], channels: int) -> str | None:
+    """Keep compatible multichannel positions when combining audio buffers."""
+    if channels <= 2:
+        return "mono" if channels == 1 else "stereo"
+    # A mono input can be broadcast to all channels without reordering them.
+    multichannel = [audio for audio in audios if audio.audio.shape[0] != 1]
+    if any(audio.audio.shape[0] != channels for audio in multichannel):
+        raise DAGError("Cannot combine multichannel audio with different channel counts.")
+    layouts = {audio.channel_layout for audio in multichannel}
+    if len(layouts) > 1:
+        raise DAGError("Cannot combine multichannel audio with different or missing channel layouts.")
+    return next(iter(layouts), None)
 
 
 def string_value(artifact: Artifact) -> str:

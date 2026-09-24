@@ -5,6 +5,49 @@ import av
 import numpy as np
 
 
+def downmix_to_stereo(audio, sample_rate, channel_layout=None):
+    """Rematrix channel-first audio using FFmpeg's standard stereo mix.
+
+    Array inputs without layout metadata use FFmpeg's default layout for
+    their channel count (for example, six channels mean 5.1). Pass a layout
+    name such as ``"5.1(side)"`` when the source uses another ordering.
+    """
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.ndim != 2 or audio.shape[0] < 1:
+        raise ValueError("Expected channel-first audio with at least one channel.")
+    channels = audio.shape[0]
+    if channels == 1:
+        return np.repeat(audio, 2, axis=0)
+    if channels == 2:
+        return audio
+    try:
+        layout = av.AudioLayout(channel_layout or f"{channels}c")
+    except ValueError as exc:
+        if channel_layout is None:
+            raise ValueError(
+                f"No default layout for {channels} audio channels; provide channel_layout explicitly."
+            ) from exc
+        raise
+    if len(layout.channels) != channels:
+        raise ValueError(f"Channel layout {layout.name!r} does not match {channels} audio channels.")
+    if any(channel.name == "NONE" for channel in layout.channels):
+        raise ValueError("Multichannel stereo downmix requires named channel positions; provide channel_layout explicitly.")
+    if audio.shape[1] == 0:
+        return np.empty((2, 0), dtype=np.float32)
+    resampler = av.AudioResampler(format="fltp", layout="stereo", rate=int(sample_rate))
+    chunks = []
+    for start in range(0, audio.shape[1], 65536):
+        frame = av.AudioFrame.from_ndarray(
+            # Packed samples also work with PyAV 14 for eight or more channels.
+            np.ascontiguousarray(audio[:, start:start + 65536].T).reshape(1, -1),
+            format="flt", layout=layout.name,
+        )
+        frame.sample_rate = int(sample_rate)
+        chunks.extend(out.to_ndarray() for out in resampler.resample(frame))
+    chunks.extend(out.to_ndarray() for out in resampler.resample(None))
+    return np.ascontiguousarray(np.concatenate(chunks, axis=1))
+
+
 def _frame_to_audio(frame, mono):
     """Implement the frame to audio helper.
 
@@ -15,6 +58,8 @@ def _frame_to_audio(frame, mono):
     Returns:
         Any: Computed result."""
     audio = frame.to_ndarray()
+    if not frame.format.is_planar:
+        audio = audio.reshape(-1, len(frame.layout.channels)).T
     audio = audio[None, :] if audio.ndim == 1 else audio
     return (audio.mean(axis=0, keepdims=True) if mono and audio.shape[0] > 1 else audio).astype(np.float32, copy=False)
 
@@ -28,7 +73,7 @@ def _ffmpeg_audio_stream_info(path):
         "-select_streams",
         "a:0",
         "-show_entries",
-        "stream=sample_rate,channels",
+        "stream=sample_rate,channels,channel_layout",
         "-of",
         "json",
         str(path),
@@ -38,20 +83,25 @@ def _ffmpeg_audio_stream_info(path):
     if not streams:
         raise ValueError(f"No audio stream found in {path!s}.")
     stream = streams[0]
-    return int(stream["sample_rate"]), int(stream["channels"])
+    return int(stream["sample_rate"]), int(stream["channels"]), stream.get("channel_layout")
 
 
-def _load_audio_ffmpeg(path, sr=None, mono=False, offset=0.0, duration=None):
+def _load_audio_ffmpeg(path, sr=None, mono=False, offset=0.0, duration=None, downmix_stereo=False, return_layout=False):
     """Load audio through the ffmpeg CLI as a fallback for damaged streams."""
-    source_rate, source_channels = _ffmpeg_audio_stream_info(path)
+    source_rate, source_channels, source_layout = _ffmpeg_audio_stream_info(path)
     out_rate = int(sr or source_rate)
-    channels = 1 if mono else source_channels
+    channels = 1 if mono else (2 if downmix_stereo and source_channels > 2 else source_channels)
+    layout = "mono" if channels == 1 else ("stereo" if channels == 2 else source_layout)
     command = ["ffmpeg", "-nostdin", "-v", "error"]
     if offset:
         command += ["-ss", str(float(offset))]
     command += ["-i", str(path), "-map", "0:a:0", "-vn"]
     if duration is not None:
         command += ["-t", str(float(duration))]
+    if layout:
+        # -ac alone selects the count's default layout, which can rematrix
+        # 3.0 to 2.1 even when preserving all three source channels.
+        command += ["-channel_layout", layout]
     command += ["-f", "f32le", "-acodec", "pcm_f32le", "-ar", str(out_rate), "-ac", str(channels), "-"]
     result = subprocess.run(command, check=True, capture_output=True)
     audio = np.frombuffer(result.stdout, dtype="<f4")
@@ -59,10 +109,13 @@ def _load_audio_ffmpeg(path, sr=None, mono=False, offset=0.0, duration=None):
     audio = audio[: complete_samples * channels]
     audio = audio.reshape(complete_samples, channels).T
     audio = np.ascontiguousarray(audio.astype(np.float32, copy=False))
-    return (audio[0] if mono or channels == 1 else audio), out_rate
+    audio = audio[0] if mono or channels == 1 else audio
+    if not layout:
+        layout = f"{channels} channels"
+    return (audio, out_rate, layout) if return_layout else (audio, out_rate)
 
 
-def _load_audio_librosa(path, sr=None, mono=False, offset=0.0, duration=None):
+def _load_audio_librosa(path, sr=None, mono=False, offset=0.0, duration=None, downmix_stereo=False, return_layout=False):
     """Load audio through librosa as a fallback before the ffmpeg CLI."""
     import librosa
 
@@ -75,13 +128,35 @@ def _load_audio_librosa(path, sr=None, mono=False, offset=0.0, duration=None):
         dtype=np.float32,
     )
     audio = np.ascontiguousarray(np.asarray(audio, dtype=np.float32))
-    return (audio[0] if audio.ndim > 1 and (mono or audio.shape[0] == 1) else audio), int(out_rate)
+    if downmix_stereo and audio.ndim == 2 and audio.shape[0] > 2:
+        # librosa does not expose the source layout. Let the ffmpeg fallback
+        # rematrix from the file rather than guess its channel positions.
+        raise ValueError("Multichannel stereo downmix requires source channel layout metadata.")
+    audio = audio[0] if audio.ndim > 1 and (mono or audio.shape[0] == 1) else audio
+    if not return_layout:
+        return audio, int(out_rate)
+    channels = 1 if audio.ndim == 1 else audio.shape[0]
+    if channels <= 2:
+        layout = "mono" if channels == 1 else "stereo"
+    else:
+        try:
+            _, source_channels, layout = _ffmpeg_audio_stream_info(path)
+        except FileNotFoundError:
+            # The audio is decoded; absent ffprobe only leaves its positions unknown.
+            layout = None
+        else:
+            if source_channels != channels:
+                raise ValueError("The source channel count does not match the decoded audio.")
+        # Match PyAV's unspecified layout without assuming speaker positions.
+        layout = layout or f"{channels} channels"
+    return audio, int(out_rate), layout
 
 
-def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None):
+def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None, downmix_stereo=False, return_layout=False):
     """Load audio through PyAV."""
     chunks = []
     out_rate = None
+    output_layout = None
     with av.open(path) as container:
         stream = container.streams.audio[0]
         out_rate = int(sr or stream.rate)
@@ -91,7 +166,11 @@ def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None):
 
         for frame in container.decode(stream):
             if resampler is None:
-                resampler = av.AudioResampler(format="fltp", layout=frame.layout.name, rate=out_rate)
+                layout = "stereo" if downmix_stereo and not mono and len(frame.layout.channels) > 2 else frame.layout.name
+                # PyAV 14 planar-to-NumPy conversion can crash at eight or
+                # more channels. Packed float frames preserve every channel.
+                resampler = av.AudioResampler(format="flt", layout=layout, rate=out_rate)
+                output_layout = "mono" if mono else layout
 
             for out in resampler.resample(frame):
                 chunks.append(audio := _frame_to_audio(out, mono))
@@ -109,10 +188,11 @@ def _load_audio_av(path, sr=None, mono=False, offset=0.0, duration=None):
     audio = np.ascontiguousarray(
         (np.concatenate(chunks, axis=-1) if chunks else np.empty((channels, 0), dtype=np.float32))[..., start:stop]
     )
-    return (audio[0] if mono or audio.shape[0] == 1 else audio), out_rate
+    audio = audio[0] if mono or audio.shape[0] == 1 else audio
+    return (audio, out_rate, output_layout) if return_layout else (audio, out_rate)
 
 
-def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
+def load_audio(path, sr=None, mono=False, offset=0.0, duration=None, *, downmix_stereo=False, return_layout=False):
     """Load an audio file as float32 NumPy samples.
 
     Audio decoding is attempted in this order: PyAV, librosa, then the
@@ -131,11 +211,20 @@ def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
         duration (float | None, optional): Maximum duration to return in
             seconds after ``offset``. ``None`` reads to the end. Defaults to
             None.
+        downmix_stereo (bool, optional): Downmix sources with more than two
+            channels to stereo using their encoded channel layout. Mono and
+            stereo sources keep their channel count. Ignored when ``mono``
+            is True. Defaults to False.
+        return_layout (bool, optional): Include the decoded channel layout as
+            a third return value. Defaults to False, preserving the usual
+            ``(audio, sample_rate)`` pair. Unknown multichannel positions use
+            an unspecified layout such as ``"3 channels"``.
 
     Returns:
         tuple[np.ndarray, int]: Audio samples and sample rate. The array is
         channel-first for multi-channel audio and one-dimensional for mono
-        output.
+        output. With ``return_layout=True``, returns
+        ``(audio, sample_rate, channel_layout)`` instead.
 
     Example:
         >>> from pymss import load_audio
@@ -161,7 +250,8 @@ def load_audio(path, sr=None, mono=False, offset=0.0, duration=None):
     errors = []
     for name, loader in loaders:
         try:
-            return loader(path, sr=sr, mono=mono, offset=offset, duration=duration)
+            return loader(path, sr=sr, mono=mono, offset=offset, duration=duration,
+                          downmix_stereo=downmix_stereo, return_layout=return_layout)
         except Exception as e:
             errors.append(f"{name}: {e}")
             continue

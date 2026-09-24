@@ -88,10 +88,10 @@ def invert_phase(audio, sample_rate=None) -> np.ndarray:
     return -np.asarray(audio, dtype=np.float32)
 
 
-def normalize_peak(audio, sample_rate=None, target_peak: float = 0.99) -> np.ndarray:
-    """Scale audio so its peak amplitude equals target_peak. No-op on silence."""
+def normalize_peak(audio, sample_rate=None, target_peak: float = 0.99, *, reference_peak: float | None = None) -> np.ndarray:
+    """Scale audio to target_peak, optionally using a peak shared by multiple stems."""
     audio = np.asarray(audio, dtype=np.float32)
-    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    peak = float(reference_peak) if reference_peak is not None else (float(np.max(np.abs(audio))) if audio.size else 0.0)
     if peak <= 0.0 or not np.isfinite(peak):
         return audio
     return audio * (target_peak / peak)

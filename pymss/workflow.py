@@ -95,6 +95,7 @@ class Workflow:
 class AudioArtifact:
     audio: np.ndarray
     sample_rate: int
+    channel_layout: str | None = None
 
 
 @dataclass
@@ -263,11 +264,20 @@ class WorkflowRunner:
 
     def _load_track(self, path: str, track_name: str) -> WorkflowTrackState | None:
         try:
-            mix, sr = self.audio_loader(path, sr=None, mono=False)
+            loaded = self.audio_loader(path, sr=None, mono=False)
+            # Layout-aware results use load_audio's channel-first contract;
+            # legacy pairs retain mono/stereo orientation detection.
+            channel_first = len(loaded) == 3
+            if channel_first:
+                mix, sr, layout = loaded
+            else:
+                mix, sr = loaded
+                layout = None
+            mix = _to_model_audio(mix, channel_first=channel_first)
             return WorkflowTrackState(
                 path=path,
                 track_name=track_name,
-                artifacts={"input": AudioArtifact(_to_model_audio(mix), int(sr))},
+                artifacts={"input": AudioArtifact(mix, int(sr), layout)},
             )
         except Exception as exc:
             if self.continue_on_error and self.logger is not None:
@@ -285,12 +295,17 @@ class WorkflowRunner:
         try:
             artifact = _resolve_input_artifact(track.artifacts, step.input)
             sample_rate = int(separator.config.audio.get("sample_rate", artifact.sample_rate))
-            model_audio = _ensure_sample_rate(_to_model_audio(artifact.audio), artifact.sample_rate, sample_rate)
+            model_audio = _ensure_sample_rate(
+                _to_model_audio(artifact.audio, channel_first=True), artifact.sample_rate, sample_rate
+            )
             stems = _requested_stems(step)
+            layout_kwargs = {"channel_layout": artifact.channel_layout} if (
+                artifact.channel_layout and model_audio.ndim == 2 and model_audio.shape[0] > 2
+            ) else {}
             if getattr(separator, "model_type", None) == "vr":
-                results = separator.separate(model_audio, pbar=False)
+                results = separator.separate(model_audio, pbar=False, **layout_kwargs)
             else:
-                results = separator.separate(model_audio, pbar=False, stems=stems)
+                results = separator.separate(model_audio, pbar=False, stems=stems, **layout_kwargs)
             selected = _select_results(step, results)
             for stem, audio in selected.items():
                 track.artifacts[f"{step.id}.{stem}"] = AudioArtifact(_to_model_audio(audio), sample_rate)
@@ -597,13 +612,13 @@ def _case_insensitive_get(mapping: dict[str, Any], key: str) -> Any:
     return None
 
 
-def _to_model_audio(audio: Any) -> np.ndarray:
+def _to_model_audio(audio: Any, *, channel_first: bool = False) -> np.ndarray:
     array = np.asarray(audio, dtype=np.float32)
     if array.ndim == 1:
         return np.ascontiguousarray(array)
     if array.ndim != 2:
-        raise WorkflowError(f"Expected mono or stereo audio, got shape {array.shape}.")
-    if array.shape[0] in (1, 2):
+        raise WorkflowError(f"Expected one- or two-dimensional audio, got shape {array.shape}.")
+    if channel_first or array.shape[0] in (1, 2):
         return np.ascontiguousarray(array)
     if array.shape[1] in (1, 2):
         return np.ascontiguousarray(array.T)
@@ -706,7 +721,7 @@ def _default_model_resolver(*args, **kwargs):
 def _default_audio_loader(*args, **kwargs):
     from .audio_io import load_audio
 
-    return load_audio(*args, **kwargs)
+    return load_audio(*args, return_layout=True, **kwargs)
 
 
 def _default_audio_saver(*args, **kwargs):

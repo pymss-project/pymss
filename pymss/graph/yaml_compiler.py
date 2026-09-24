@@ -53,9 +53,12 @@ from ..workflow import Workflow, WorkflowStep, validate_workflow
 # Custom model types understood by ``custom_mss_separate``. Mirrors
 # ``comfy_mss/nodes/separate.py::_CustomSeparateBase.MODEL_TYPES``.
 CUSTOM_MODEL_TYPES = [
+    "auto",
     "mel_band_roformer",
     "bs_roformer",
     "bs_roformer_hyperace",
+    "bs_conformer",
+    "mel_band_conformer",
     "mdx23c",
     "htdemucs",
     "apollo",
@@ -231,6 +234,9 @@ def _build_separation_node(step: WorkflowStep, kind: str, *, input_id: str, para
             ],
         },
     )
+    if kind == "custom":
+        node.data["model_path"] = step.model_path
+        node.data["config_path"] = step.config_path
     return node
 
 
