@@ -1407,7 +1407,7 @@ wheels = [
 
 [[package]]
 name = "pymss"
-version = "2.1.5"
+version = "2.1.6"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
@@ -1445,7 +1445,7 @@ requires-dist = [
     { name = "librosa", specifier = ">=0.10.2" },
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.31.0" },
     { name = "numpy", specifier = ">=1.26" },
-    { name = "pymss-core", specifier = "==0.1.8" },
+    { name = "pymss-core", specifier = "==0.1.9" },
     { name = "pysocks", marker = "extra == 'proxy'", specifier = ">=1.7.1,<2" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.7.1" },
@@ -1464,7 +1464,7 @@ dev = [
 
 [[package]]
 name = "pymss-core"
-version = "0.1.8"
+version = "0.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1473,9 +1473,9 @@ dependencies = [
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/1e/c815e38be6abf94ecf2a28a6b2ef8ee6abdf467038c631655cd80589b669/pymss_core-0.1.8.tar.gz", hash = "sha256:de4e43a2766de74e6b5b1a8abb8969465e5d5cd256762996dac7ee73092030dd", size = 91931, upload-time = "2026-09-08T14:28:33.571Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/60/8ffbcab8cf4f8f236b804d280a99bb47ddfda282042c93c62e00805c1010/pymss_core-0.1.9.tar.gz", hash = "sha256:5a202bfa9e2590e50e1e16c69b2cf8978f3d94aa6db3eaa243bc10836e781536", size = 98240, upload-time = "2026-09-22T11:46:21.129Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/0b/df95e538074a2561a1415e00117842cd1f7d2bf9e7161d311361aef25620/pymss_core-0.1.8-py3-none-any.whl", hash = "sha256:070912896e02c1dada77e363a19a4687d0ec885751babce07d32423787e4f0bb", size = 119099, upload-time = "2026-09-08T14:28:32.108Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/f6/d88ade3ad29ee0b3012494e09ad78e86dec398ddf8d2384566a180669149/pymss_core-0.1.9-py3-none-any.whl", hash = "sha256:1ad6f00bf74be2ee622cf2caaaaeb5f9e84f4abd039f7f07d413cc137b6866de", size = 122910, upload-time = "2026-09-22T11:46:19.554Z" },
 ]
 
 [[package]]
