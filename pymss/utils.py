@@ -9,6 +9,7 @@ from typing import Dict
 from pymss_core import get_model_from_config as _core_get_model_from_config
 
 from .config import load_config
+from .devices import inference_context
 from .progress import _ProgressContext
 
 
@@ -1006,7 +1007,7 @@ def demix_track(config, model, mix, device, pbar=False, source_indices=None, pro
     mix_device = _model_mix(mix, device)
 
     with _autocast(device, _resolve_use_amp(config)):
-        with torch.inference_mode():
+        with inference_context(device):
             result, counter = _init_overlap_buffers(config, mix, device, use_complete_fast_path, source_indices)
             progress = _ProgressContext(pbar, mix.shape[1], progress_callback, sample_rate=sample_rate)
 
@@ -1083,7 +1084,7 @@ def demix_track_demucs(config, model, mix, device, pbar=False, source_indices=No
     step = _get_inference_step(config, C)
 
     with _autocast(device, _resolve_use_amp(config)):
-        with torch.inference_mode():
+        with inference_context(device):
             req_shape = (_source_count(config, source_indices),) + tuple(mix.shape)
             result = torch.zeros(req_shape, dtype=torch.float32)
             counter = torch.zeros(req_shape, dtype=torch.float32)
@@ -1156,7 +1157,7 @@ def demix(
         )
         progress.emit(0)
         with _autocast(device, _resolve_use_amp(config)):
-            with torch.inference_mode():
+            with inference_context(device):
                 estimates = (
                     apply_legacy_model(
                         model,

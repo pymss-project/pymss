@@ -117,7 +117,7 @@ def _common_separator_kwargs(
     """Build kwargs passed to ``MSSeparator`` that are not model identity."""
 
     return {
-        "device": device or ctx.device or "auto",
+        "device": ctx.device if device in (None, "", "auto") and ctx.device else device or "auto",
         "device_ids": parse_device_ids(device_ids_raw),
         "output_format": "wav",  # we never save through the separator
         "use_tta": bool(use_tta),

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from pymss.devices import inference_context
 from torch import nn
 from torch.nn.utils.fusion import fuse_conv_bn_eval
 from tqdm import tqdm
@@ -187,6 +188,8 @@ class VRSeparator(CommonSeparator):
             fused = _fuse_sequential_conv_bn(self.model_run)
             self.logger.debug(f"Fused {fused} VR Conv2d+BatchNorm2d pairs")
         target_device = "cpu" if self._store_torch_model_on_cpu_for_mlx() else self.torch_device
+        if torch.device(target_device).type == "privateuseone":
+            self.model_run.float()
         self.model_run.to(target_device)
         if self.use_channels_last:
             self.model_run.to(memory_format=torch.channels_last)
@@ -323,7 +326,7 @@ class VRSeparator(CommonSeparator):
                         self.progress_callback(i + batch_count, patches, "Processing VR batches")
                 return mx.concatenate(mask_batches, axis=2)[:, :, :write_pos]
 
-            with torch.inference_mode():
+            with inference_context(device):
                 for i in process_batches:
                     batch_count = min(self.batch_size, patches - i)
                     x_batch_cpu = torch.from_numpy(x_dataset[i : i + batch_count])
@@ -415,7 +418,9 @@ class VRSeparator(CommonSeparator):
                 return np.array(y_spec, copy=False), np.array(v_spec, copy=False)
 
             mask = adjust_aggr_torch(mask, is_non_accom_stem)
-            x_spec_t = torch.from_numpy(x_spec).to(device)
+            if mask.device.type == "privateuseone":
+                mask = mask.cpu()
+            x_spec_t = torch.from_numpy(x_spec).to(mask.device)
             y_spec = (mask * x_spec_t).cpu().numpy()
             v_spec = ((1 - mask) * x_spec_t).cpu().numpy()
             return y_spec, v_spec

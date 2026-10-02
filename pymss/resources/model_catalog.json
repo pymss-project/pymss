@@ -1545,11 +1545,12 @@
       "config_relpath": "instrumental/model_mel_band_roformer_ep_0_sdr_11.4805.yaml",
       "auxiliary_relpaths": [],
       "size_bytes": 2739362141,
-      "primary_category": "instrumental",
-      "primary_category_cn": "伴奏/无人声提取",
-      "secondary_category": "",
-      "secondary_category_cn": "伴奏/无人声提取",
-      "target_stem": "Instrumental"
+      "primary_category": "vocal",
+      "primary_category_cn": "人声",
+      "secondary_category": "vocal_extraction",
+      "secondary_category_cn": "人声提取",
+      "target_stem": "Vocals",
+      "target_instrument_override": "Vocals"
     },
     {
       "name": "model_mel_band_roformer_ep_0_sdr_16.8230.ckpt",

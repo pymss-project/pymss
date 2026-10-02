@@ -38,6 +38,20 @@ pip install pymss
 pip install "pymss[server]"
 ```
 
+### Windows DirectML
+
+DirectML 是独立的 Windows 后端，支持 AMD、Intel、NVIDIA 的 DX12 显卡。请使用单独的 Python 3.10–3.12 环境：当前 `torch-directml` 版本要求 PyTorch 2.4.1，不能与较新的 CUDA/ROCm 环境混装。
+
+```bat
+python -m venv .venv-dml
+.venv-dml\Scripts\python -m pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
+.venv-dml\Scripts\python -m pip install "pymss[dml]"
+```
+
+Windows 下使用 uv 开发 DML 时执行 `uv sync --python 3.12 --extra dml --no-group cuda`。默认开发环境在 Windows 和 Linux 使用 CUDA；CUDA 与 DML 依赖组互斥。
+
+API 使用 `device="dml", device_ids=[0]`，CLI 使用 `--device dml --device-id 0`。通过 `pymss.devices.directml_devices()` 获取设备列表。DirectML 每次选择一张显卡，神经网络使用 FP32，FFT 与复数运算在 CPU 执行。
+
 ## 开发
 
 开发需要 Git、Python 3.10 或更高版本，以及 [uv](https://docs.astral.sh/uv/)。WebUI 开发还需要 Node.js 和 npm。
@@ -297,7 +311,7 @@ with separator as s:
     'vr']
 - model_path: 模型文件路径。
 - config_path: 配置文件路径。
-- device: 设备类型，默认为 'auto'。 必须是以下之一 ['auto', 'cuda', 'mps', 'cpu']
+- device: 设备类型，默认为 'auto'。 必须是以下之一 ['auto', 'cuda', 'rocm', 'mps', 'mlx', 'dml', 'cpu']
 - device_ids: 设备 ID 列表，默认为 [0]。
 - output_format: 输出音频格式，默认为 'wav'。可选 wav、flac、mp3、m4a、aac、opus、vorbis、ogg。
 - use_tta: 是否使用 TTA（测试时增强），默认为 False。 使用 TTA 会使处理时间增加三倍，但质量会略有提高。

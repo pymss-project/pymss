@@ -45,6 +45,7 @@ class ModelEntry:
     secondary_category: str
     secondary_category_cn: str
     target_stem: str
+    target_instrument_override: str = ""
 
     @property
     def stem(self):
@@ -93,6 +94,7 @@ class ModelEntry:
             secondary_category=data.get("secondary_category", ""),
             secondary_category_cn=data.get("secondary_category_cn", ""),
             target_stem=data.get("target_stem", ""),
+            target_instrument_override=data.get("target_instrument_override", ""),
         )
 
 
@@ -357,6 +359,7 @@ def resolve_model(model_name, model_dir=None, require_supported=True, require_ex
         "config_path": str(config_path) if config_path else None,
         "source": "catalog",
         "inference_params": {},
+        "target_instrument_override": entry.target_instrument_override or None,
     }
 
 
@@ -474,6 +477,8 @@ def create_separator(model_name, model_dir=None, **separator_kwargs):
         resolved,
         separator_kwargs.pop("inference_params", None),
     )
+    if resolved.get("target_instrument_override"):
+        separator_kwargs.setdefault("target_instrument_override", resolved["target_instrument_override"])
     return MSSeparator(
         model_type=resolved["model_type"],
         model_path=resolved["model_path"],
