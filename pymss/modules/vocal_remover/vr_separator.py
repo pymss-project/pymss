@@ -342,6 +342,9 @@ class VRSeparator(CommonSeparator):
                     if not pred.size()[3] > 0:
                         raise ValueError("Window size error: h1_shape[3] must be greater than h2_shape[3]")
                     pred = pred.detach().float().permute(1, 2, 0, 3).reshape(pred.size(1), pred.size(2), -1)
+                    if device_type == "privateuseone":
+                        # Accumulate long-track masks on the CPU and release each completed GPU window.
+                        pred = pred.cpu()
                     if mask is None:
                         mask = torch.empty(
                             (pred.size(0), pred.size(1), patches * pred.size(2)),
