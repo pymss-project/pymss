@@ -1676,6 +1676,8 @@ class MSSeparator:
             is_stereo = model_channels == 2 or (model_channels is None and input_channels > 1)
             mixes = [_prepare_mix_channels(mix, is_stereo, self.logger, sample_rate, channel_layout)]
         if self.model_type == "vr":
+            # Graph callers assign the callback after the VR child is loaded.
+            self.model.progress_callback = self.progress_callback
             results = self.model.separate_array(mixes[0], sample_rate)
             if input_channels == 1:
                 results = {stem: audio.mean(axis=1, keepdims=True) if audio.ndim == 2 else audio
@@ -1763,22 +1765,24 @@ class MSSeparator:
         model = getattr(self, "model", None)
         try:
             cache_model = getattr(model, "model_run", None) if self.model_type == "vr" else model
-            if isinstance(cache_model, torch.nn.Module):
-                clear_model_runtime_caches(cache_model)
-            if self.model_type == "vr" and model is not None:
-                model_run = getattr(model, "model_run", None)
-                if model_run is not None and hasattr(model_run, "to"):
+            try:
+                if isinstance(cache_model, torch.nn.Module):
+                    clear_model_runtime_caches(cache_model)
+            finally:
+                if self.model_type == "vr" and model is not None:
+                    model_run = getattr(model, "model_run", None)
+                    if model_run is not None and hasattr(model_run, "to"):
+                        try:
+                            model_run.to("cpu")
+                        except Exception as exc:
+                            self.logger.debug(f"Could not move VR model to CPU during close: {exc}")
+                    if hasattr(model, "model_run"):
+                        model.model_run = None
+                elif model is not None and hasattr(model, "to"):
                     try:
-                        model_run.to("cpu")
+                        model.to("cpu")
                     except Exception as exc:
-                        self.logger.debug(f"Could not move VR model to CPU during close: {exc}")
-                if hasattr(model, "model_run"):
-                    model.model_run = None
-            elif model is not None and hasattr(model, "to"):
-                try:
-                    model.to("cpu")
-                except Exception as exc:
-                    self.logger.debug(f"Could not move model to CPU during close: {exc}")
+                        self.logger.debug(f"Could not move model to CPU during close: {exc}")
         finally:
             self._restore_cudnn_benchmark()
             self.model = None

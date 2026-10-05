@@ -94,12 +94,26 @@ OUTPUT_NODE_TYPES = {"pymss_save_audio"}
 # ---------------------------------------------------------------------------
 
 
-def _progress_for(ctx: NodeContext, node_id: object):
+def _progress_for(ctx: NodeContext, node_id: object, *, audio_index: int = 0, audio_count: int = 1,
+                  unit: str = "seconds", passes: int = 1):
     """Adapt pymss' ``callback(done, total, message)`` to per-node progress."""
 
+    pass_index = 0
+    last_done = 0
+
     def _cb(done: int, total: int, message: str | None = None) -> None:
+        nonlocal pass_index, last_done
         if ctx.progress_callback is not None:
             ctx.progress_callback(int(done), max(1, int(total)), f"node={node_id} {message or 'separate'}")
+        if ctx.progress_event_callback is None:
+            return
+        if passes > 1 and done == 0 and last_done > 0:
+            pass_index = min(passes - 1, pass_index + 1)
+        last_done = done
+        fraction = (pass_index + min(1.0, max(0.0, done / max(1, total)))) / passes
+        ctx.report_progress(ctx.nodes_by_id[node_id], (audio_index + fraction) / audio_count,
+                            f"node={node_id} {message or 'separate'}", audio_index=audio_index + 1,
+                            audio_count=audio_count, done=done, total=total, unit=unit)
 
     return _cb
 
@@ -147,6 +161,8 @@ def _run_separation(
     *,
     build_separator: Any,
     stems: list[str],
+    audio_index: int = 0,
+    audio_count: int = 1,
 ) -> tuple[dict[str, np.ndarray], int]:
     """Drive one ``MSSeparator.separate`` call under inference_mode and progress."""
 
@@ -168,7 +184,11 @@ def _run_separation(
             model_audio = _resample(model_audio, sample_rate, target_sr)
             sample_rate = target_sr
         try:
-            separator.progress_callback = _progress_for(ctx, node.id)
+            vr = getattr(separator, "model_type", None) == "vr"
+            passes = 2 if vr and getattr(getattr(separator, "model", None), "enable_tta", False) else 1
+            separator.progress_callback = _progress_for(ctx, node.id, audio_index=audio_index,
+                                                       audio_count=audio_count, unit="batches" if vr else "seconds",
+                                                       passes=passes)
         except Exception:  # pragma: no cover - attribute is settable in practice
             pass
         layout_kwargs = {"channel_layout": audio.channel_layout} if audio.channel_layout and model_audio.shape[0] > 2 else {}
@@ -225,6 +245,9 @@ def _stems_from_separator(separator: Any) -> list[str]:
     target = getattr(training, "target_instrument", None) if training is not None else None
     if target:
         return [target]
+    instruments = getattr(training, "instruments", None) if training is not None else None
+    if instruments:
+        return list(instruments)
     instruments = getattr(config, "instruments", None)
     if instruments:
         return list(instruments)
@@ -603,6 +626,8 @@ def _separate_signature_factory(max_stems: int, *, is_list: bool):
 def _resolve_stems_for_node(node: DAGNode, ctx: NodeContext, *, kind: str) -> list[str]:
     """Stem names declared on the node (from comfy output port labels)."""
 
+    if node.type.removeprefix("pymss_").endswith("_list"):
+        return []
     raw = node_data(node).get("outputs", [])
     stems: list[str] = []
     for output in raw:
@@ -763,13 +788,16 @@ def _execute_separate(kind: str, *, is_list: bool):
         # custom nodes).
         stems_for_run = list(declared_stems)
         if not stems_for_run:
-            with factory() as separator:
-                stems_for_run = _stems_from_separator(separator) or ["output"]
+            separator = factory()
+            stems_for_run = _stems_from_separator(separator) or ["output"]
 
         all_audio_results: list[AudioArtifact] = []
         all_stem_names: list[StringArtifact] = []
-        for audio in audios:
-            results, output_sample_rate = _run_separation(ctx, node, audio, build_separator=factory, stems=stems_for_run)
+        for audio_index, audio in enumerate(audios):
+            ctx.report_progress(node, audio_index / len(audios), f"node={node.id} Processing audio",
+                                audio_index=audio_index + 1, audio_count=len(audios))
+            results, output_sample_rate = _run_separation(ctx, node, audio, build_separator=factory, stems=stems_for_run,
+                                                        audio_index=audio_index, audio_count=len(audios))
             claimed: set[str] = set()
             for stem in stems_for_run:
                 value = results.get(stem)
@@ -794,6 +822,8 @@ def _execute_separate(kind: str, *, is_list: bool):
                 artifact = numpy_to_audio(np.asarray(value, dtype=np.float32), output_sample_rate, stem_name=stem, source_path=audio.source_path)
                 all_audio_results.append(artifact)
                 all_stem_names.append(StringArtifact(stem))
+            ctx.report_progress(node, (audio_index + 1) / len(audios), f"node={node.id} Audio processing completed",
+                                audio_index=audio_index + 1, audio_count=len(audios))
 
         if is_list:
             outputs[0] = all_audio_results

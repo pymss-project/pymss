@@ -165,6 +165,46 @@ def test_vr_mono_output_averages_model_channels():
     np.testing.assert_allclose(result, audio.T * 0.5, atol=1e-6)
 
 
+def test_vr_callback_assigned_after_loading_is_forwarded_to_the_child():
+    separator = make_separator(2)
+    separator.model_type = "vr"
+    events = []
+
+    class VRModel:
+        progress_callback = None
+        def separate_array(self, mix, sample_rate):
+            self.progress_callback(1, 2, "Processing VR batches")
+            return {"vocals": mix.T}
+
+    separator.model = VRModel()
+    separator.progress_callback = lambda *args: events.append(args)
+    separator.separate(channel_audio(2))
+    assert events == [(1, 2, "Processing VR batches")]
+    assert separator.model.progress_callback is separator.progress_callback
+
+
+@pytest.mark.parametrize("vr", [False, True])
+def test_close_moves_model_to_cpu_even_if_runtime_cache_cleanup_fails(monkeypatch, vr):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    separator = make_separator(2)
+    model = separator.model
+    model.to = Mock(return_value=model)
+    if vr:
+        separator.model_type = "vr"
+        separator.model = SimpleNamespace(model_run=model)
+    separator.store_dirs = {"vocals": "outputs"}
+    separator.del_cache = Mock()
+    failure = RuntimeError("Runtime cache cleanup failed")
+    monkeypatch.setattr("pymss.separator.clear_model_runtime_caches", Mock(side_effect=failure))
+    with pytest.raises(RuntimeError) as caught:
+        separator.close()
+    assert caught.value is failure
+    model.to.assert_called_once_with("cpu")
+    assert separator.model is None and separator.config is None and separator.store_dirs == {}
+    separator.del_cache.assert_called_once()
+
+
 @pytest.mark.parametrize("model_channels", [1, 2])
 def test_real_roformer_auto_loading_preserves_channel_contract(tmp_path, model_channels):
     from pymss_core import get_model_from_config

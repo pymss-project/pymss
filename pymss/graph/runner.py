@@ -4,15 +4,14 @@ This replaces the legacy ``WorkflowRunner`` for the CLI ``workflow run`` path.
 It preserves the externally visible semantics:
 
 * Folder inputs are expanded one file at a time.
-* The same model is loaded once per batch (separator cache shared across
-  files).
+* Consecutive uses of the same model share a bounded separator cache across files.
 * ``output_layout`` (``folders`` / ``flat``) controls whether each file's
   outputs land under ``<output>/<track>/...`` or directly under ``<output>``.
 * ``continue_on_error`` keeps the batch going when one file fails.
 
 The difference is that each per-file execution now goes through
 :func:`pymss.dag.run_dag`, sharing the single :class:`SeparatorCache` across
-the whole batch so weights load once per unique model.
+the whole batch. Models are evicted before a different model is loaded.
 """
 
 from __future__ import annotations
@@ -61,6 +60,8 @@ class LegacyWorkflowRunner:
         continue_on_error: bool = False,
         output_layout: str = "folders",
         progress_callback: Callable[[int, int, str | None], None] | None = None,
+        progress_event_callback: Callable[[dict[str, Any]], None] | None = None,
+        separator_cache_max_entries: int | None = 1,
     ) -> None:
         self.workflow = validate_workflow(workflow)
         self.model_dir = model_dir
@@ -75,6 +76,8 @@ class LegacyWorkflowRunner:
         self.continue_on_error = bool(continue_on_error)
         self.output_layout = _validate_output_layout(output_layout)
         self.progress_callback = progress_callback
+        self.progress_event_callback = progress_event_callback
+        self.separator_cache_max_entries = separator_cache_max_entries
         # ``separator_factory`` is accepted for API compatibility with the old
         # runner (tests inject fakes). When provided, we hand it to the cache so
         # the same fakes drive the DAG path.
@@ -92,7 +95,7 @@ class LegacyWorkflowRunner:
         cache_kwargs: dict[str, Any] = {}
         if self.separator_factory is not None:
             cache_kwargs["factory"] = self._adapt_legacy_factory(self.separator_factory)
-        cache = SeparatorCache(**cache_kwargs)
+        cache = SeparatorCache(max_entries=self.separator_cache_max_entries, **cache_kwargs)
 
         processed: list[str] = []
         try:
@@ -106,6 +109,7 @@ class LegacyWorkflowRunner:
                         logger=self.logger,
                         debug=self.debug,
                         progress_callback=self._wrap_progress(track_name),
+                        progress_event_callback=self._wrap_progress_event(track_name),
                         strict=True,
                         model_dir=self.model_dir,
                         download=self.download,
@@ -147,6 +151,15 @@ class LegacyWorkflowRunner:
             self.progress_callback(done, total, f"track={track_name} {message or ''}".strip())
 
         return _cb
+
+    def _wrap_progress_event(self, track_name: str):
+        if self.progress_event_callback is None:
+            return None
+
+        def cb(event):
+            self.progress_event_callback({**event, "track": track_name})
+
+        return cb
 
     @staticmethod
     def _adapt_legacy_factory(factory: Callable[..., Any]) -> Callable[..., Any]:

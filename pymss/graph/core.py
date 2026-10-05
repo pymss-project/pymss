@@ -38,6 +38,8 @@ import numpy as np
 
 from ..plugins.registry import _REGISTRY as _PLUGIN_REGISTRY
 
+PROGRESS_EVENT_VERSION = 1
+
 
 # ---------------------------------------------------------------------------
 # Artifacts
@@ -300,6 +302,27 @@ class NodeContext:
     nodes_by_id: dict[object, "DAGNode"] = field(default_factory=dict)
     current_node_id: object | None = None
     name_prefix: str = ""
+    progress_event_callback: Callable[[dict[str, Any]], None] | None = None
+    node_index: int = 0
+    node_count: int = 0
+    _overall_fraction: float = 0.0
+
+    def report_progress(self, node: DAGNode, fraction: float, message: str, *,
+                        audio_index: int | None = None, audio_count: int | None = None,
+                        done: int | float | None = None, total: int | float | None = None,
+                        unit: str | None = None) -> None:
+        """Report structured graph progress without changing legacy callbacks."""
+        if self.progress_event_callback is None:
+            return
+        fraction = min(1.0, max(0.0, fraction))
+        self._overall_fraction = max(self._overall_fraction, (self.node_index + fraction) / max(1, self.node_count))
+        event = {"node_id": str(node.id), "node_type": node.type, "overall_fraction": self._overall_fraction,
+                 "node_fraction": fraction, "message": message}
+        if audio_index is not None:
+            event.update(audio_index=audio_index, audio_count=audio_count)
+        if done is not None and total is not None:
+            event.update(done=done, total=total, unit=unit)
+        self.progress_event_callback(event)
 
     def require(self, capability_name: str) -> Callable[..., Any]:
         """Look up a capability by name (delegates to the plugin registry)."""
@@ -312,16 +335,22 @@ class NodeContext:
 
 
 class SeparatorCache:
-    """Reuse loaded separators within a single run.
+    """Reuse a bounded number of loaded separators within a run.
 
-    Keyed by a description tuple that captures everything that changes the
-    loaded weights/config. Store-dir/output-format are execution-time concerns
-    and are NOT part of the key.
+    Keys include constructor options so different model configurations do not
+    share an instance.
+
+    One separator is kept by default. Eviction closes the least recently used
+    separator before the next model is loaded. Pass ``max_entries=None`` to
+    explicitly retain the historical unbounded cache.
     """
 
-    def __init__(self, factory: Callable[..., Any] | None = None) -> None:
+    def __init__(self, factory: Callable[..., Any] | None = None, *, max_entries: int | None = 1) -> None:
+        if max_entries is not None and (isinstance(max_entries, bool) or not isinstance(max_entries, int) or max_entries < 1):
+            raise ValueError("max_entries must be a positive integer or None")
         self._entries: dict[str, Any] = {}
         self._factory = factory or self._default_factory
+        self.max_entries = max_entries
 
     @staticmethod
     def _default_factory(**kwargs: Any) -> Any:
@@ -345,21 +374,29 @@ class SeparatorCache:
 
     def get(self, **kwargs: Any) -> Any:
         key = self.key_for(**kwargs)
-        entry = self._entries.get(key)
-        if entry is None:
+        if key in self._entries:
+            entry = self._entries.pop(key)
+        else:
+            while self.max_entries is not None and len(self._entries) >= self.max_entries:
+                oldest = next(iter(self._entries))
+                self._close_separator(self._entries.pop(oldest))
             entry = self._factory(**kwargs)
-            self._entries[key] = entry
+        self._entries[key] = entry
         return entry
 
+    @staticmethod
+    def _close_separator(separator: Any) -> None:
+        close = getattr(separator, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # pragma: no cover - best-effort cleanup
+                pass
+
     def close(self) -> None:
-        for separator in self._entries.values():
-            close = getattr(separator, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception:  # pragma: no cover - best-effort cleanup
-                    pass
-        self._entries.clear()
+        entries, self._entries = self._entries, {}
+        for separator in entries.values():
+            self._close_separator(separator)
 
     def __enter__(self) -> "SeparatorCache":
         return self
@@ -581,6 +618,7 @@ def run_dag(
     logger: Any = None,
     debug: bool = False,
     progress_callback: Callable[[int, int, str | None], None] | None = None,
+    progress_event_callback: Callable[[dict[str, Any]], None] | None = None,
     strict: bool = True,
     model_dir: str | os.PathLike | None = None,
     download: bool = False,
@@ -618,15 +656,18 @@ def run_dag(
             audio_params=dict(audio_params or {}),
             nodes_by_id={node.id: node for node in dag.nodes},
             name_prefix=name_prefix or "",
+            progress_event_callback=progress_event_callback,
         )
 
         order = topological_order(dag.nodes)
         total = len(order)
+        ctx.node_count = total
         results: dict[object, NodeResult] = {}
         saved: list[str] = []
         all_records: list[DAGOutputRecord] = []
 
         for index, node in enumerate(order):
+            ctx.node_index = index
             if (
                 not node.signature.inputs
                 and not node.signature.output_names
@@ -647,6 +688,7 @@ def run_dag(
                         )
                     if progress_callback is not None:
                         progress_callback(index + 1, total, f"node={node.id} skipped unknown")
+                    ctx.report_progress(node, 1.0, f"node={node.id} skipped unknown")
                     continue
                 raise
 
@@ -676,6 +718,7 @@ def run_dag(
 
             if progress_callback is not None:
                 progress_callback(index, total, f"node={node.id} type={node.type}")
+            ctx.report_progress(node, 0.0, f"node={node.id} type={node.type}")
 
             ctx.current_node_id = node.id
             result = node_info.execute(ctx, gathered)
@@ -685,6 +728,7 @@ def run_dag(
 
             if progress_callback is not None:
                 progress_callback(index + 1, total, f"node={node.id} type={node.type}")
+            ctx.report_progress(node, 1.0, f"node={node.id} type={node.type}")
 
         return DAGExecutionResult(saved, records=all_records)
     finally:
