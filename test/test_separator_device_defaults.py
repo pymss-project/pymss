@@ -72,6 +72,10 @@ def test_explicit_cuda_requires_cuda_instead_of_using_another_accelerator(monkey
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
 
+    import pymss.separator as separator_module
+
+    monkeypatch.setattr(separator_module, "_npu_runtime_available", lambda: False)
+
     with pytest.raises(RuntimeError, match="CUDA"):
         _select_device("cuda", [0], DummyLogger())
 

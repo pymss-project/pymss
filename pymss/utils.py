@@ -305,7 +305,7 @@ def _autocast(device, enabled):
     Returns:
         Any: Computed result."""
     device_type = torch.device(device).type
-    if enabled and device_type in ("cuda", "mps"):
+    if enabled and device_type in ("cuda", "mps", "npu"):
         return torch.amp.autocast(device_type, dtype=torch.float16)
     return nullcontext()
 
@@ -648,7 +648,7 @@ def _finalize_overlap(result, counter, length_init, border):
     counter = counter[..., start:end]
     output_shape = result.shape[:-1] + (end - start,)
 
-    if torch.device(result.device).type != "cuda":
+    if torch.device(result.device).type not in ("cuda", "npu"):
         estimated_sources = (result / counter).cpu().numpy()
         np.nan_to_num(estimated_sources, copy=False, nan=0.0)
         return estimated_sources
@@ -1097,7 +1097,7 @@ def demix_track(config, model, mix, device, pbar=False, source_indices=None, pro
     mix, length_init = _prepare_mix_for_chunks(mix, border)
     chunk_starts, chunk_windows = _build_chunk_plan(mix.shape[1], C, step, fade_size)
     device_type = torch.device(device).type
-    use_complete_fast_path = device_type in ("cuda", "cpu")
+    use_complete_fast_path = device_type in ("cuda", "cpu", "npu")
     mix_device = _model_mix(mix, device)
 
     with _autocast(device, _resolve_use_amp(config)):

@@ -22,7 +22,11 @@ def _hann_window(n_fft, dtype, device):
     key = (int(n_fft), dtype, torch_device.type, torch_device.index)
     window = _HANN_WINDOW_CACHE.get(key)
     if window is None:
-        window = torch.hann_window(n_fft, dtype=dtype, device=torch_device)
+        if torch_device.type == "npu":
+            # torch_npu's hann_window hits an int64/float cast bug on device.
+            window = torch.hann_window(n_fft, dtype=dtype).to(torch_device)
+        else:
+            window = torch.hann_window(n_fft, dtype=dtype, device=torch_device)
         _HANN_WINDOW_CACHE[key] = window
     return window
 
@@ -196,29 +200,56 @@ def wave_to_spectrogram(wave, hop_length, n_fft, mp, band, is_v51_model=False, t
 
 
 def _torch_stft(wave, n_fft, hop_length, device):
-    if device is None or torch.device(device).type != "cuda":
+    device_type = None if device is None else torch.device(device).type
+    if device_type not in ("cuda", "npu"):
         return None
-    wave_t = torch.from_numpy(np.ascontiguousarray(wave)).to(device)
-    window = _hann_window(n_fft, wave_t.dtype, device)
-    spec = torch.stft(
-        wave_t,
-        n_fft=n_fft,
-        hop_length=hop_length,
-        window=window,
-        center=True,
-        pad_mode="constant",
-        return_complex=True,
-    )
+    wave_t = torch.from_numpy(np.ascontiguousarray(wave)).to(device).float()
+    window = _hann_window(n_fft, torch.float32, device)
+    if device_type == "npu":
+        from pymss_core.npu_fft import stft_npu
+
+        spec = stft_npu(
+            wave_t,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            window=window,
+            center=True,
+            pad_mode="constant",
+            return_complex=True,
+        )
+    else:
+        spec = torch.stft(
+            wave_t,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            window=window,
+            center=True,
+            pad_mode="constant",
+            return_complex=True,
+        )
     return np.asfortranarray(spec.cpu().numpy())
 
 
 def _torch_istft(spec, hop_length, device):
-    if device is None or torch.device(device).type != "cuda":
+    device_type = None if device is None else torch.device(device).type
+    if device_type not in ("cuda", "npu"):
         return None
     n_fft = (spec.shape[1] - 1) * 2
     spec_t = torch.from_numpy(np.ascontiguousarray(spec)).to(device)
     window = _hann_window(n_fft, spec_t.real.dtype, device)
-    wave = torch.istft(spec_t, n_fft=n_fft, hop_length=hop_length, window=window, center=True, return_complex=False)
+    if device_type == "npu":
+        from pymss_core.npu_fft import istft_npu
+
+        wave = istft_npu(
+            spec_t,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            window=window,
+            center=True,
+            return_complex=False,
+        )
+    else:
+        wave = torch.istft(spec_t, n_fft=n_fft, hop_length=hop_length, window=window, center=True, return_complex=False)
     return np.asfortranarray(wave.cpu().numpy())
 
 

@@ -10,6 +10,17 @@
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
+### 昇腾 NPU（Ascend）
+
+pymss 通过 `torch_npu` 支持华为昇腾 NPU。请先安装与 CANN 工具链及 torch 版本匹配的昇腾 PyTorch 适配器（参见 [Ascend torch_npu 兼容性矩阵](https://github.com/Ascend/pytorch#readme)），然后：
+
+```sh
+pip install torch==<与torch_npu匹配的版本> torch_npu==<版本>
+pip install pymss
+```
+
+使用 `--device npu`（或 `device="auto"`，其优先级为 CUDA → NPU → MPS）。NPU 上的 STFT/ISTFT 使用基于 `torch.fft` 原语的设备内实现；循环神经网络单元（LSTM/GRU，用于 bandit/scnet/VR-5.x 模型）因 torch_npu 暂未提供 aclnn 算子，会透明地回退到 CPU 执行。
+
 ### AMD ROCm
 
 ```sh
@@ -93,7 +104,7 @@ pymss infer bs_roformer_voc_hyperacev2 \
   --format wav     # wav | flac | mp3 | m4a | aac | opus | vorbis | ogg
 ```
 
-`--device auto` 在有 NVIDIA GPU 时优先使用 CUDA；Apple Silicon Mac 默认使用 MLX 后端。可以用 `--device mlx` 强制 MLX，或用 `--device mps` 强制 PyTorch MPS。
+`--device auto` 在有 NVIDIA GPU 时优先使用 CUDA，其次是昇腾 NPU（`torch_npu`），再次是 Apple Silicon MLX。可以用 `--device npu` 强制昇腾 NPU、`--device mlx` 强制 MLX，或用 `--device mps` 强制 PyTorch MPS。
 `--save-as-folder` 会把每个输入音频的输出音轨保存到以该音频命名的子文件夹中，例如 `results/song/song_vocals.wav`。
 
 默认下载源是 ModelScope。也可以指定下载源或模型目录：
@@ -332,7 +343,7 @@ with separator as s:
     'vr']
 - model_path: 模型文件路径。
 - config_path: 配置文件路径。
-- device: 设备类型，默认为 'auto'。 必须是以下之一 ['auto', 'cuda', 'mps', 'cpu']
+- device: 设备类型，默认为 'auto'。 必须是以下之一 ['auto', 'cuda', 'npu', 'mps', 'cpu']
 - device_ids: 设备 ID 列表，默认为 [0]。
 - output_format: 输出音频格式，默认为 'wav'。可选 wav、flac、mp3、m4a、aac、opus、vorbis、ogg。
 - use_tta: 是否使用 TTA（测试时增强），默认为 False。 使用 TTA 会使处理时间增加三倍，但质量会略有提高。

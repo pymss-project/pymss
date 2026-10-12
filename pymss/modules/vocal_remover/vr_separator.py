@@ -333,7 +333,7 @@ class VRSeparator(CommonSeparator):
                         else x_batch_cpu.to(device=device, non_blocking=True)
                     )
                     device_type = torch.device(device).type
-                    use_amp = self.use_amp and device_type in ("cuda", "mps")
+                    use_amp = self.use_amp and device_type in ("cuda", "mps", "npu")
                     with torch.amp.autocast(device_type, dtype=torch.float16, enabled=use_amp):
                         pred = self.model_run.predict_mask(x_batch)
                     if not pred.size()[3] > 0:

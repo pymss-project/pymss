@@ -76,6 +76,18 @@ OUTPUT_NORMALIZE_TARGET_DBFS = -0.01
 OUTPUT_NORMALIZE_PEAK = 10 ** (OUTPUT_NORMALIZE_TARGET_DBFS / 20)
 
 
+def _npu_runtime_available():
+    """Return True when torch_npu is importable and reports an available NPU."""
+    try:
+        import torch_npu  # noqa: F401  (registers the npu backend on import)
+    except Exception:
+        return False
+    try:
+        return torch.npu.is_available()
+    except Exception:
+        return False
+
+
 def _resolve_public_device(device, inference_params, logger):
     """Resolve public device.
 
@@ -100,8 +112,13 @@ def _resolve_public_device(device, inference_params, logger):
             raise RuntimeError("device='rocm' requires a ROCm-enabled PyTorch build with a visible HIP device")
         logger.debug("Mapping device='rocm' to device='cuda' (ROCm PyTorch exposes HIP devices as cuda)")
         return "cuda", inference_params
+    if requested_device == "npu":
+        if not _npu_runtime_available():
+            raise RuntimeError("device='npu' requires the torch_npu package with an available Ascend device")
+        logger.debug("Using Ascend NPU through torch_npu")
+        return "npu", inference_params
     if requested_device not in {"auto", "cpu", "cuda", "mps"}:
-        raise ValueError("device must be 'auto', 'cpu', 'cuda', 'mps', 'rocm', or 'mlx'")
+        raise ValueError("device must be 'auto', 'cpu', 'cuda', 'mps', 'rocm', 'npu', or 'mlx'")
     return requested_device, inference_params
 
 
@@ -115,9 +132,22 @@ def _select_device(device, device_ids, logger):
 
     Returns:
         Any: Computed result."""
+    if device == "npu":
+        device_count = torch.npu.device_count()
+        if not isinstance(device_ids, (list, tuple)) or not device_ids or any(
+            isinstance(index, bool) or not isinstance(index, int) or index < 0 for index in device_ids
+        ):
+            raise ValueError("NPU device_ids must be a non-empty list of non-negative integers")
+        invalid_ids = [index for index in device_ids if index >= device_count]
+        if invalid_ids:
+            raise ValueError(f"NPU device ID(s) {invalid_ids} are outside the available range [0, {device_count})")
+        logger.debug("Ascend NPU is available through torch_npu, setting Torch device to NPU")
+        return f"npu:{device_ids[0]}"
     if device not in ["cpu", "mps"]:
         cuda_available = torch.cuda.is_available()
         if device == "cuda" and not cuda_available:
+            if _npu_runtime_available():
+                raise RuntimeError("device='cuda' requested but only an Ascend NPU is available; use --device npu")
             raise RuntimeError("device='cuda' requires a CUDA or ROCm-enabled PyTorch build with an available GPU")
         if cuda_available:
             if not isinstance(device_ids, (list, tuple)) or not device_ids or any(
@@ -133,6 +163,17 @@ def _select_device(device, device_ids, logger):
             else:
                 logger.debug("CUDA is available in Torch, setting Torch device to CUDA")
             return f"cuda:{device_ids[0]}"
+        if _npu_runtime_available():
+            npu_count = torch.npu.device_count()
+            if not isinstance(device_ids, (list, tuple)) or not device_ids or any(
+                isinstance(index, bool) or not isinstance(index, int) or index < 0 for index in device_ids
+            ):
+                raise ValueError("NPU device_ids must be a non-empty list of non-negative integers")
+            invalid_ids = [index for index in device_ids if index >= npu_count]
+            if invalid_ids:
+                raise ValueError(f"NPU device ID(s) {invalid_ids} are outside the available range [0, {npu_count})")
+            logger.debug("auto device selected Ascend NPU through torch_npu")
+            return f"npu:{device_ids[0]}"
         if torch.backends.mps.is_available():
             logger.debug("Apple Silicon MPS/CoreML is available in Torch, setting Torch device to MPS")
             return "mps"
@@ -907,6 +948,12 @@ class MSSeparator:
         self.device_ids = device_ids
         self.device = _select_device(device, self.device_ids, self.logger)
         self.inference_params = _prefer_mlx_for_auto(device, self.device, self.inference_params, self.logger)
+        if torch.device(self.device).type == "npu":
+            from pymss_core.npu_rnn import install_npu_rnn_fallback
+
+            # torch_npu LSTM/GRU kernels lack aclnn implementations on current
+            # builds; bounce recurrent cells through CPU instead of faulting.
+            install_npu_rnn_fallback()
 
         self._cudnn_benchmark_initial = torch.backends.cudnn.benchmark
         torch.backends.cudnn.benchmark = True
@@ -1819,3 +1866,6 @@ class MSSeparator:
         if "cuda" in self.device:
             self.logger.debug("Clearing CUDA cache...")
             torch.cuda.empty_cache()
+        if "npu" in self.device:
+            self.logger.debug("Clearing NPU cache...")
+            torch.npu.empty_cache()

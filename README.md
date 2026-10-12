@@ -28,6 +28,23 @@ pip install pymss
 
 WSL2 (RDNA3/RDNA4) can follow the Linux steps instead.
 
+### Ascend NPU
+
+
+
+pymss runs on Huawei Ascend NPUs through `torch_npu`. Install the Ascend PyTorch adapter matching
+your CANN toolkit and torch build (see the [Ascend torch_npu compatibility matrix](https://github.com/Ascend/pytorch#readme)), then:
+
+```sh
+pip install torch==<torch_npu-matched-version> torch_npu==<version>
+pip install pymss
+```
+
+Use `--device npu` (or `device="auto"`, which prefers CUDA, then NPU, then MPS). On NPU the
+STFT/ISTFT pipeline uses an in-device implementation built on `torch.fft` primitives, and
+recurrent cells (LSTM/GRU, used by bandit/scnet/VR-5.x models) transparently bounce through CPU
+because torch_npu does not ship aclnn kernels for them yet.
+
 For CLI and Python API usage, install:
 
 ```sh
@@ -95,7 +112,7 @@ pymss infer bs_roformer_voc_hyperacev2 \
   --format wav     # wav | flac | mp3 | m4a | aac | opus | vorbis | ogg
 ```
 
-`--device auto` uses CUDA first when an NVIDIA GPU is available. On Apple Silicon it uses the MLX backend by default. Use `--device mlx` to force MLX, or `--device mps` to force PyTorch MPS.
+`--device auto` uses CUDA first when an NVIDIA GPU is available, then Ascend NPU (`torch_npu`), then Apple Silicon MLX. Use `--device npu` to force Ascend NPU, `--device mlx` to force MLX, or `--device mps` to force PyTorch MPS.
 `--save-as-folder` writes each input audio file's stems under a subfolder named after that audio file, for example `results/song/song_vocals.wav`.
 
 The default download source is ModelScope. You can choose another source or model directory:
@@ -359,7 +376,7 @@ For a detailed explanation of every `MSSeparator` argument, see the [MSSeparator
     'vr']
 - model_path: The path to the model file.
 - config_path: The path to the configuration file.
-- device: The type of device, default is 'auto'. Must be one of ['auto', 'cuda', 'mps', 'cpu']
+- device: The type of device, default is 'auto'. Must be one of ['auto', 'cuda', 'npu', 'mps', 'cpu']
 - device_ids: List of device IDs, default is [0].
 - output_format: The output audio format, default is 'wav'. One of wav, flac, mp3, m4a, aac, opus, vorbis, ogg.
 - use_tta: Whether to use TTA, default is False. Using TTA will triple the processing time with a little bit improvement in quality.
