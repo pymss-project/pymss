@@ -65,6 +65,7 @@ CUSTOM_MODEL_TYPES = [
     "bandit",
     "bandit_v2",
     "scnet",
+    "flashsr",
 ]
 
 

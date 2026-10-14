@@ -218,6 +218,8 @@ def _load_state_dict(model_type, model_path, device):
     if model_type == "apollo":
         model_path = _apollo_state_dict_path(model_path)
         return _unwrap_state_dict(torch.load(model_path, map_location=map_location, weights_only=False))
+    if model_type == "flashsr":
+        return _unwrap_state_dict(torch.load(model_path, map_location=map_location, weights_only=True, mmap=True)["model"])
     try:
         return _unwrap_state_dict(torch.load(model_path, map_location=map_location, weights_only=True, mmap=True))
     except (TypeError, ValueError, RuntimeError):
@@ -386,6 +388,8 @@ def _model_input_channels(model_type, config, model=None):
         return 2
     if model_type == "apollo":
         return None
+    if model_type == "flashsr":
+        return 1
     model = getattr(model, "module", model)
     channels = getattr(model, "audio_channels", None)
     model_config = config.get("model", {})
@@ -414,6 +418,18 @@ def _model_input_channels(model_type, config, model=None):
     if channels not in (1, 2):
         raise ValueError(f"Expected a mono or stereo model, got {channels} input channels.")
     return channels
+
+
+def _output_sample_rate(config):
+    """Return the sample rate used when writing stems.
+
+    Args:
+        config (AttrDict | dict): Loaded pymss configuration.
+
+    Returns:
+        int: ``audio.output_sample_rate`` when set, otherwise ``audio.sample_rate``."""
+    input_rate = int(config.audio.get("sample_rate", 44100))
+    return int(config.audio.get("output_sample_rate") or input_rate)
 
 
 def _prepare_mix_channels(mix, is_stereo, logger, sample_rate=44100, channel_layout=None):
@@ -1542,6 +1558,7 @@ class MSSeparator:
         sample_rate = 44100
         if "sample_rate" in self.config.audio:
             sample_rate = self.config.audio["sample_rate"]
+        output_sr = _output_sample_rate(self.config)
         self.logger.info(
             f"{input_label}: {input_folder}, Total files found: {len(all_mixtures_path)}, Use sample rate: {sample_rate}"
         )
@@ -1580,7 +1597,7 @@ class MSSeparator:
                         save_ok = True
                         for stems in self._stem_batches_to_save():
                             results = self.separate(mix, pbar=False, stems=stems)
-                            track_saves.append((path, self._submit_save_outputs(save_executor, results, sr, file_name)))
+                            track_saves.append((path, self._submit_save_outputs(save_executor, results, output_sr, file_name)))
                             save_ok = (
                                 self._drain_save_queue(track_saves, success_files, None, 1, record_success=False) and save_ok
                             )

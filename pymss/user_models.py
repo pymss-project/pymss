@@ -27,6 +27,7 @@ KNOWN_MODEL_TYPES = frozenset(
         "scnet",
         "tasnet",
         "vr",
+        "flashsr",
     }
 )
 
