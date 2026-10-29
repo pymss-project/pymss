@@ -15,7 +15,7 @@ concurrency:
 jobs:
   macos-plugins:
     name: ${{ matrix.name }}
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     strategy:
       fail-fast: false
