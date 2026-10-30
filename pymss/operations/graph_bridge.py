@@ -26,9 +26,9 @@ from ..graph.core import (
     NodeResult,
     NodeSignature,
     PortSpec,
-    register_node,
 )
-from . import OperationSpec, _merge_and_validate_params
+from . import OperationSpec, _invoke_operation
+from ..plugins.registry import get_registry
 
 __all__ = ["register_operation_node", "reset_operation_nodes", "operation_node_type"]
 
@@ -76,26 +76,23 @@ def register_operation_node(
                 # Graph links deliver Artifacts; parameter validation needs the
                 # underlying value (e.g. StringConstant → a string param).
                 params[pname] = getattr(value, "value", value)
-        merged = _merge_and_validate_params(spec.id, spec.params, params)
-
         from . import OperationContext
 
         op_ctx = OperationContext(
+            workdir=str(ctx.output_dir),
             progress=lambda fraction, message="", event=None: ctx.report_progress(
                 node, float(fraction), message or f"operation {spec.id}"
             ) if node is not None else None,
             logger=ctx.logger,
         )
-        result = run(op_ctx, op_inputs, merged)
-        if not isinstance(result, Mapping):
-            raise ValueError(f"operation {spec.id!r} returned a non-mapping result")
+        result = _invoke_operation(spec, run, op_inputs, params, op_ctx)
         outputs: dict[int, Any] = {}
         for slot, name in enumerate(output_names):
             if name in result:
                 outputs[slot] = result[name]
         return NodeResult(outputs=outputs)
 
-    register_node(node_type, signature=_signature, execute=_execute)
+    get_registry().register_node(node_type, _execute, signature=_signature, source=source)
     return node_type
 
 

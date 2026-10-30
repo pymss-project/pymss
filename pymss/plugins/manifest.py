@@ -7,6 +7,7 @@ host-specific tables such as ``[tool.pymss.studio]`` are ignored.
 
 from __future__ import annotations
 
+import math
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -55,6 +56,24 @@ class NodeContribution:
     widgets: tuple[dict, ...]
     description: str = ""
 
+    def validate_widgets(self, values: Any) -> None:
+        """Validate declared widget slots without changing legacy slot order.
+
+        Short arrays and null slots use the declared default, as graph.widget()
+        does. Extra slots remain readable by custom executors for compatibility.
+        """
+        if values is None:
+            values = ()
+        if not isinstance(values, (list, tuple)):
+            raise ValueError(f"node {self.type!r} widgets_values must be an array")
+        for index, widget in enumerate(self.widgets):
+            value = values[index] if index < len(values) else None
+            if value is None:
+                value = widget.get("default")
+            if value is None:
+                continue
+            _validate_widget_value(value, widget, f"node {self.type!r} widget {widget['name']!r}")
+
 
 @dataclass
 class OperationDecl:
@@ -81,6 +100,10 @@ class PluginManifest:
     @property
     def operation_ids(self) -> set[str]:
         return {operation.id for operation in self.operations}
+
+    @property
+    def node_types(self) -> set[str]:
+        return {node.type for node in self.nodes}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,10 +173,33 @@ NODE_WIDGET_TYPES = {"text", "number", "toggle", "combo", "slider"}
 NODE_TYPE_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
+def _finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _validate_widget_value(value: Any, widget: dict, label: str) -> None:
+    kind = widget["type"]
+    if kind in {"number", "slider"}:
+        if not _finite_number(value):
+            raise ValueError(f"{label} must be a finite number")
+        if "min" in widget and value < widget["min"]:
+            raise ValueError(f"{label} is below minimum {widget['min']}")
+        if "max" in widget and value > widget["max"]:
+            raise ValueError(f"{label} is above maximum {widget['max']}")
+    elif kind == "toggle":
+        if not isinstance(value, bool):
+            raise ValueError(f"{label} must be a boolean")
+    elif not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    if kind == "combo" and "options" in widget and value not in widget["options"]:
+        raise ValueError(f"{label} must be one of {widget['options']}")
+
+
 def _parse_node_ports(value: Any, field_name: str) -> tuple[dict, ...]:
     if not isinstance(value, list):
         raise ManifestError(f"{field_name} must be an array of tables")
     ports = []
+    seen: set[str] = set()
     for item in value:
         if not isinstance(item, dict):
             raise ManifestError(f"{field_name} entries must be tables")
@@ -161,6 +207,9 @@ def _parse_node_ports(value: Any, field_name: str) -> tuple[dict, ...]:
         ptype = str(item.get("type") or "").strip().upper()
         if not name:
             raise ManifestError(f"{field_name} entry is missing 'name'")
+        if name in seen:
+            raise ManifestError(f"{field_name} contains duplicate name {name!r}")
+        seen.add(name)
         if ptype not in NODE_PORT_TYPES:
             raise ManifestError(f"{field_name} entry {name!r} has unsupported port type {item.get('type')!r} (supported: {sorted(NODE_PORT_TYPES)})")
         entry = {"name": name, "type": ptype}
@@ -174,12 +223,16 @@ def _parse_node_widgets(value: Any, field_name: str) -> tuple[dict, ...]:
     if not isinstance(value, list):
         raise ManifestError(f"{field_name} must be an array of tables")
     widgets = []
+    seen: set[str] = set()
     for item in value:
         if not isinstance(item, dict):
             raise ManifestError(f"{field_name} entries must be tables")
         name = str(item.get("name") or "").strip()
         if not name:
             raise ManifestError(f"{field_name} entry is missing 'name'")
+        if name in seen:
+            raise ManifestError(f"{field_name} contains duplicate name {name!r}")
+        seen.add(name)
         wtype = str(item.get("type") or "text").strip().lower()
         if wtype not in NODE_WIDGET_TYPES:
             raise ManifestError(f"{field_name} entry {name!r} has unsupported widget type {wtype!r} (supported: {sorted(NODE_WIDGET_TYPES)})")
@@ -192,11 +245,23 @@ def _parse_node_widgets(value: Any, field_name: str) -> tuple[dict, ...]:
             widget["max"] = item["max"]
         if item.get("step") is not None:
             widget["step"] = item["step"]
+        for constraint in ("min", "max", "step"):
+            if constraint in widget and (wtype not in {"number", "slider"} or not _finite_number(widget[constraint])):
+                raise ManifestError(f"{field_name} entry {name!r} {constraint} must be a finite numeric constraint")
+        if "min" in widget and "max" in widget and widget["min"] > widget["max"]:
+            raise ManifestError(f"{field_name} entry {name!r} min must not exceed max")
+        if "step" in widget and widget["step"] <= 0:
+            raise ManifestError(f"{field_name} entry {name!r} step must be positive")
         if item.get("options") is not None:
             options = item["options"]
             if not isinstance(options, list):
                 raise ManifestError(f"{field_name} entry {name!r} options must be an array")
             widget["options"] = [str(option) for option in options]
+        if "default" in widget:
+            try:
+                _validate_widget_value(widget["default"], widget, f"{field_name} entry {name!r} default")
+            except ValueError as exc:
+                raise ManifestError(str(exc)) from exc
         widgets.append(widget)
     return tuple(widgets)
 

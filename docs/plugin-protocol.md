@@ -53,6 +53,9 @@ title = "My Chain"
 - `operations`：静态声明，宿主无需执行代码就能列出插件提供的操作。id 使用相同的命名段规则，必须以 `<插件 id>.` 开头并追加至少一个非空命名段，且不重复。清单和运行时共享校验规则。`setup()` 注册的集合与声明不一致时，激活失败并回滚。
 - 版本约束（`requires_pymss`、插件依赖）支持子集：`==,>=,<=,>,<,~=`，按 PEP 440 风格比较。
 - `contributions.graphs.file` 必须解析到插件目录内部（拒绝 `..` 越界、绝对路径、越界符号链接）。
+- `contributions.nodes` 必须与 `setup(handle)` 通过 `handle.register_node()` 注册的节点集合完全一致；类型名、输入/输出端口名和 widget 名不得重复。节点与 capability 不允许覆盖其他来源的同名注册。
+- 内置节点名称及其兼容别名在加载图执行器前就已保留；插件注册同名节点会在激活阶段失败，不会阻断后续内置节点的懒加载。
+- 节点 widgets 的 `type/default/min/max/options` 在运行前校验，`step` 是编辑器步长。既有工作流继续使用按声明顺序排列的 `widgets_values`；缺失值使用节点默认值，额外历史槽位不参与校验。
 - 没有 `pyproject.toml` 或 `[tool.pymss.plugin]` 的目录不再加载，报告中给出原因。
 
 ## 3. 贡献类型
@@ -65,7 +68,7 @@ title = "My Chain"
 
 **约束：**
 
-- DAG 与页面不得各自定义参数；参数 schema 只存在于 Operation。
+- 有等价 Operation 的 DAG 节点和页面复用其参数 schema；节点 widgets 负责旧工作流的展示与位置映射，不替代 Operation 校验。自定义节点可通过清单 widgets 声明自己的参数约束。
 - 普通 DAG 默认离线执行；实时音频需要未来单独的流式接口，本协议不隐含。
 - 页面、播放器等宿主贡献由宿主定义，例如 Studio 读取 `[[tool.pymss.studio.views]]`。
 
@@ -74,13 +77,15 @@ title = "My Chain"
 ```text
 discover（读清单，不执行代码；可同时扫描多个插件根目录）
   → resolve（依赖检查：缺失/版本不满足/环 → blocked，保留原因）
-  → activate（依赖序：先依赖后依赖方；setup() 注册贡献；核对声明的操作；单插件失败回滚自身）
+  → activate（依赖序：先依赖后依赖方；setup() 注册贡献；核对声明的操作与节点；单插件失败回滚自身）
 ```
 
 - 宿主显式传入插件根目录：`Runtime.load_plugins(roots=[...])`、`bootstrap(roots=[...])`。未传入时使用 `get_plugins_dir()`（`$PYMSS_PLUGINS_DIR` 或 `~/.pymss/plugins`）。
 - 加载报告每行包含 `name, path, loaded, error`；清单有效时另含 `plugin_id, version, api_version, requires_pymss, dependencies, operations, status, blocked_by`，激活成功时含 `contributions`。
 - `status ∈ {resolved, activated, blocked, failed}`。
 - 插件间调用必须经由 Operation/Service 公共接口，不得 import 其他插件内部模块。
+- 节点执行器可捕获注册时的 handle，调用 `handle.run_operation(id, inputs=..., params=..., context=...)` 执行本插件 Operation。独立调用与图节点使用相同的输入、参数和声明输出校验。
+- 节点与 capability 注册表目前在进程内共享。工作流宿主应在每个 Worker 内维护一个活动插件集合和对应 Runtime，串行执行激活；创建多个 Runtime 不提供多份相互隔离的 DAG 注册表。
 - 安装（`pymss.plugins.install.install`）接受 `plugins_dir` 与 `registry_url` 参数；registry 以插件 id 为键。
 
 ## 5. 进度与插件工具包
@@ -96,8 +101,17 @@ discover（读清单，不执行代码；可同时扫描多个插件根目录）
 | `isolate_stdout()` | 把第三方库的输出重定向到 stderr |
 | `require_file` / `require_directory` / `available_path` | 路径校验与不覆盖的文件名分配 |
 | `render_output` / `publish_export_path` | 先写私有临时文件，再原子发布到最终路径 |
+| `materialize_audio(artifact)` | 上下文管理器：将当前 AUDIO 缓冲写入独立临时浮点 WAV，保留采样率与声道布局，退出时清理 |
 | `ffmpeg_path` / `ffprobe_path` / `run_ffmpeg` / `run_process` / `subprocess_detail` | 外部进程调用 |
 | `ToolError` | 携带 `code`、`recoverable`、`extra` 的工具错误 |
+
+### 工作流音频和文件产物
+
+`AudioArtifact.audio` 才是当前音频内容；`source_path` 只记录来源，分离、滤波、裁剪等处理后不能重新读取该路径代替缓冲。仅支持文件的后端应使用 `with materialize_audio(artifact) as path:`，在上下文内完成读取，不向调用方返回临时输入路径。
+
+持久产物写入 `NodeContext.output_dir`，并同时返回 `NodeResult.saved_paths` 和包含节点身份、格式的 `DAGOutputRecord`；文件路径仍可作为 STRING 输出。写入输入目录或只返回路径字符串不符合产物管理契约。对应的 Operation 使用宿主提供的 `OperationContext.workdir` 作为默认输出目录。
+
+宿主可设置 `PYMSS_SCRATCH_DIR` 为本次 Worker 独占的目录。工具包在其下为每次调用建立独立子目录，正常结束或 Python 异常时自动清理；强制终止 Worker 后由宿主清理整个目录。不得让同时运行的 Worker 共享该目录的所有权。
 
 ## 6. DAG 贡献执行（pymss 侧 API）
 

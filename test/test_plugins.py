@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from pymss._builtin_node_types import BUILTIN_NODE_TYPES
 from pymss.plugins import (
     CapabilityNotFound,
     bootstrap,
@@ -32,33 +33,44 @@ from pymss.plugins.install import InstallError, install, uninstall
 
 @pytest.fixture(autouse=True)
 def _reset_registry():
-    """Each test starts with a clean registry and loader cache.
-
-    Clearing only user registrations is not possible (registrations carry no
-    owner scope), so clear everything and restore the builtin registrations a
-    fresh process would have. Without the restore, tests that assert on the
-    builtin codec/DSP capabilities see an empty registry once this module has
-    run once (the autouse fixture leaks the cleared state across modules).
-    """
-    reg = get_registry()
-    reg.capabilities.clear()
-    reg.nodes.clear()
-    reg.cli_commands.clear()
-    reg._reserved_node_types.clear()
-    reset()
+    """Isolate each plugin test without invalidating other modules' graph cache."""
+    import pymss.operations as operations
+    from pymss.graph.core import _load_builtin_nodes
+    from pymss.plugins import loader
     from pymss.plugins.builtins import register_builtin_capabilities
     from pymss.plugins.codecs import register_builtin_codecs
 
-    register_builtin_capabilities()
-    register_builtin_codecs()
-    yield
-    reg.capabilities.clear()
-    reg.nodes.clear()
-    reg.cli_commands.clear()
-    reg._reserved_node_types.clear()
-    reset()
-    register_builtin_capabilities()
-    register_builtin_codecs()
+    # Python keeps imported graph modules cached. Snapshot their registrations
+    # before clearing the test registry, then restore the same entry identities.
+    _load_builtin_nodes()
+    reg = get_registry()
+    snapshots = [
+        (reg.capabilities, dict(reg.capabilities)),
+        (reg.nodes, dict(reg.nodes)),
+        (reg._reserved_node_types, set(reg._reserved_node_types)),
+        (reg._builtin_registrations, dict(reg._builtin_registrations)),
+    ]
+    commands = list(reg.cli_commands)
+    depth = reg._builtin_registration_depth
+    runtime, report = operations._DEFAULT_RUNTIME, loader._LAST_REPORT
+    try:
+        for current, _before in snapshots:
+            current.clear()
+        reg.cli_commands.clear()
+        reg._builtin_registration_depth = 0
+        reg._reserved_node_types.update(BUILTIN_NODE_TYPES)
+        operations._DEFAULT_RUNTIME = None
+        reset()
+        register_builtin_capabilities()
+        register_builtin_codecs()
+        yield
+    finally:
+        for current, before in snapshots:
+            current.clear()
+            current.update(before)
+        reg.cli_commands[:] = commands
+        reg._builtin_registration_depth = depth
+        operations._DEFAULT_RUNTIME, loader._LAST_REPORT = runtime, report
 
 
 def test_register_capability_direct():
@@ -104,10 +116,11 @@ def test_reserved_node_cannot_be_overridden_by_plugin():
 def test_reserved_node_allows_builtin_override():
     reg = get_registry()
     reg.reserve_node_type("mss_separate")
-    # pymss core itself can register reserved nodes with the internal flag.
-    reg.register_node(
-        "mss_separate", lambda ctx, inputs: None, source="builtin", allow_override_builtin=True
-    )
+    # Only the trusted core initialization boundary can register reserved nodes.
+    with reg._builtin_registration():
+        reg.register_node(
+            "mss_separate", lambda ctx, inputs: None, source="builtin", allow_override_builtin=True
+        )
     assert reg.get_node("mss_separate") is not None
 
 

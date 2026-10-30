@@ -177,7 +177,10 @@ def register_alias(alias: str, canonical: str) -> None:
     target = _PLUGIN_REGISTRY.nodes.get(canonical)
     if target is None:
         raise KeyError(f"cannot alias {alias!r}: canonical type {canonical!r} is not registered")
-    _PLUGIN_REGISTRY.nodes[alias] = target
+    _PLUGIN_REGISTRY.register_node(
+        alias, target.func, source=target.source,
+        description=target.description, signature=target.signature,
+    )
 
 
 class UnknownNodeError(KeyError):
@@ -840,8 +843,9 @@ def _load_builtin_nodes() -> None:
     global _builtins_loaded
     if _builtins_loaded:
         return
-    from . import nodes  # noqa: F401  (side-effect: registers comfy-mss nodes)
-    from . import builtin_nodes  # noqa: F401  (side-effect: registers ComfyUI built-in nodes)
+    with _PLUGIN_REGISTRY._builtin_registration():
+        from . import nodes  # noqa: F401  (side-effect: registers comfy-mss nodes)
+        from . import builtin_nodes  # noqa: F401  (side-effect: registers ComfyUI built-in nodes)
 
     OUTPUT_NODE_TYPES.update(nodes.OUTPUT_NODE_TYPES)
     OUTPUT_NODE_TYPES.update(builtin_nodes.OUTPUT_NODE_TYPES)

@@ -241,16 +241,7 @@ class Runtime:
         context: OperationContext | None = None,
     ) -> dict[str, Any]:
         entry = self._require_entry(operation_id)
-        _check_inputs(entry.spec, inputs)
-        resolved = _resolve_input_values(entry.spec, inputs)
-        merged = _merge_and_validate_params(operation_id, entry.spec.params, params)
-        ctx = context or OperationContext()
-        result = entry.run(ctx, resolved, merged)
-        if not isinstance(result, Mapping):
-            raise OperationError(
-                f"operation {operation_id!r} must return a mapping of named outputs"
-            )
-        return dict(result)
+        return _invoke_operation(entry.spec, entry.run, inputs, params, context or OperationContext())
 
     # ---- plugin loading (setup protocol) ----
 
@@ -320,6 +311,42 @@ class _RuntimePluginHandle:
         self._nodes_before = dict(registry.nodes)
         self._cli_before = list(registry.cli_commands)
         self.registered_operations: list[str] = []
+        self.registered_nodes: list[str] = []
+        self._node_declarations = {}
+
+    def configure_manifest(self, manifest) -> None:
+        """Bind declarations before import/setup so graph handlers share validation."""
+        self._node_declarations = {node.type: node for node in manifest.nodes}
+
+    def run_operation(self, operation_id, *, inputs, params, context=None):
+        """Run this plugin's Operation from a registered node using its Runtime.
+
+        Nodes retain this handle in their executor closure so standalone and
+        workflow calls share input/parameter validation and execution context.
+        """
+        if operation_id not in self.registered_operations:
+            raise OperationError(f"operation {operation_id!r} is not registered by {self.source!r}")
+        return self.runtime.run(operation_id, inputs=inputs, params=params, context=context)
+
+    def validate_node_registrations(self) -> None:
+        """Reject registrations outside the handle or whose owner was changed."""
+        from ..plugins.manifest import ManifestError
+        from ..plugins.registry import get_registry
+
+        registry = get_registry()
+        current = registry.nodes
+        tracked = set(self.registered_nodes)
+        for name, registration in current.items():
+            if registration is self._nodes_before.get(name):
+                continue
+            # A plugin may lazily import core graph modules during setup.
+            if registry.is_builtin_registration("node", name, registration) and name not in tracked:
+                continue
+            if name not in tracked or registration.source != self.source:
+                raise ManifestError(f"node {name!r} must be registered through setup(plugin) by {self.source!r}")
+        for name in tracked:
+            if name not in current or current[name].source != self.source:
+                raise ManifestError(f"node {name!r} is not registered by {self.source!r}")
 
     def register_operation(self, *, id, params, inputs=None, outputs=None, run=None, **kwargs):
         spec = OperationSpec(
@@ -343,22 +370,23 @@ class _RuntimePluginHandle:
         self.runtime._operations.clear()
         self.runtime._operations.update(self._operations_before)
         registry = get_registry()
-        for current, before in (
-            (registry.capabilities, self._capabilities_before),
-            (registry.nodes, self._nodes_before),
+        for kind, current, before in (
+            ("capability", registry.capabilities, self._capabilities_before),
+            ("node", registry.nodes, self._nodes_before),
         ):
             # Importing graph modules may initialize builtins. Preserve those
             # registrations because Python retains the imported modules too.
             builtins = {
                 name: entry for name, entry in current.items()
-                if name not in before and entry.source in {"builtin", "pymss.builtin"}
+                if name not in before and registry.is_builtin_registration(kind, name, entry)
             }
             current.clear()
             current.update(builtins)
             current.update(before)
         builtin_commands = [
             entry for entry in registry.cli_commands
-            if entry.source == "builtin" and not any(entry is previous for previous in self._cli_before)
+            if registry.is_builtin_registration("cli", id(entry), entry)
+            and not any(entry is previous for previous in self._cli_before)
         ]
         registry.cli_commands[:] = [*self._cli_before, *builtin_commands]
 
@@ -371,14 +399,47 @@ class _RuntimePluginHandle:
         register_capability(name, func, source=self.source, description=description)
 
     def register_node(self, node_type, func, *, description="", signature=None):
+        from functools import wraps
+
         from pymss.plugins import register_node
 
-        register_node(node_type, func, source=self.source, description=description, signature=signature)
+        declaration = self._node_declarations.get(node_type)
+        if declaration is not None and declaration.widgets:
+            @wraps(func)
+            def execute(ctx, inputs):
+                from ..graph.core import DAGError, ctx_node_of
+
+                node = ctx_node_of(ctx, node_type)
+                values = node.data.get("widgets_values") if node is not None else None
+                try:
+                    declaration.validate_widgets(values)
+                except ValueError as exc:
+                    raise DAGError(str(exc)) from exc
+                return func(ctx, inputs)
+        else:
+            execute = func
+        register_node(node_type, execute, source=self.source, description=description, signature=signature)
+        self.registered_nodes.append(node_type)
 
     def register_cli(self, path, func, *, help="", add_arguments=None):
         from pymss.plugins import register_cli
 
         register_cli(path, func, help=help, source=self.source, add_arguments=add_arguments)
+
+
+def _invoke_operation(spec, run, inputs, params, context):
+    """Shared execution boundary for standalone and graph-backed Operations."""
+    context.check_cancelled()
+    _check_inputs(spec, inputs)
+    resolved = _resolve_input_values(spec, inputs)
+    merged = _merge_and_validate_params(spec.id, spec.params, params)
+    result = run(context, resolved, merged)
+    if not isinstance(result, Mapping):
+        raise OperationError(f"operation {spec.id!r} must return a mapping of named outputs")
+    missing = set(spec.outputs) - set(result)
+    if missing:
+        raise OperationError(f"operation {spec.id!r} did not return declared outputs: {sorted(missing)}")
+    return dict(result)
 
 
 def _resolve_input_values(spec: OperationSpec, inputs: Mapping[str, Any]) -> dict[str, Any]:

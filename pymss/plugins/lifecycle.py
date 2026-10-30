@@ -2,7 +2,7 @@
 
 Implements docs/plugin-protocol.md §4. Every plugin directory needs a v2
 manifest; plugins get dependency resolution, ordered activation, a check that
-``setup()`` registered exactly the declared operations, and rollback of their
+``setup()`` registered exactly the declared operations and nodes, and rollback of their
 own registrations on failure.
 """
 
@@ -283,6 +283,9 @@ class PluginManager:
                 context = activation_context(state.directory) if activation_context is not None else nullcontext()
                 with context:
                     handle = registration_factory(f"plugin:{manifest.plugin_id}")
+                    configure = getattr(handle, "configure_manifest", None)
+                    if configure is not None:
+                        configure(manifest)
                     module, namespace = _import_manifest_entry(state.directory, module_name)
                     setup = getattr(module, attr, None)
                     if setup is None:
@@ -295,6 +298,16 @@ class PluginManager:
                             f"(missing {sorted(manifest.operation_ids - registered)}, "
                             f"undeclared {sorted(registered - manifest.operation_ids)})"
                         )
+                    registered_nodes = set(getattr(handle, "registered_nodes", ()))
+                    if registered_nodes != manifest.node_types:
+                        raise ManifestError(
+                            "setup() nodes do not match the manifest "
+                            f"(missing {sorted(manifest.node_types - registered_nodes)}, "
+                            f"undeclared {sorted(registered_nodes - manifest.node_types)})"
+                        )
+                    validate_nodes = getattr(handle, "validate_node_registrations", None)
+                    if validate_nodes is not None:
+                        validate_nodes()
                 state.status = "activated"
                 state.contributions = manifest.to_dict()["contributions"]
                 self._activated.append(manifest.plugin_id)

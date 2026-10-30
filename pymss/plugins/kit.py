@@ -53,6 +53,45 @@ _context: ContextVar[tuple[Any, Any] | None] = ContextVar("pymss_tool_context", 
 
 
 @contextmanager
+def materialize_audio(audio: Any) -> Iterator[Path]:
+    """Expose current AUDIO samples to file-only backends for this call.
+
+    ``source_path`` is provenance, never a cache of the current samples.
+    Hosts may own ``PYMSS_SCRATCH_DIR`` to clean up after forcibly stopping a
+    worker. Each call gets a separate child directory, including batch threads.
+    """
+    import av
+    import numpy as np
+    from pymss.graph.core import AudioArtifact, safe_filename_part
+
+    if not isinstance(audio, AudioArtifact):
+        raise TypeError("Expected an AudioArtifact")
+    if audio.sample_rate <= 0 or audio.audio.shape[0] == 0 or audio.audio.shape[1] == 0:
+        raise ValueError("Audio must have a positive sample rate and non-empty samples")
+    if not np.isfinite(audio.audio).all():
+        raise ValueError("Audio contains non-finite samples")
+    parent = os.environ.get("PYMSS_SCRATCH_DIR") or None
+    name = safe_filename_part(audio.stem_name or Path(audio.source_path).stem or "audio")
+    layout = audio.channel_layout or f"{audio.audio.shape[0]}c"
+    with tempfile.TemporaryDirectory(prefix="pymss-audio-", dir=parent) as temporary:
+        path = Path(temporary) / f"{name}.wav"
+        # Float WAV preserves processed samples without clipping/quantizing;
+        # an explicit layout also preserves multichannel channel positions.
+        with av.open(str(path), "w", format="wav") as container:
+            stream = container.add_stream("pcm_f32le", rate=audio.sample_rate)
+            stream.layout = layout
+            for start in range(0, audio.audio.shape[1], 65536):
+                packed = np.ascontiguousarray(audio.audio[:, start:start + 65536].T).reshape(1, -1)
+                frame = av.AudioFrame.from_ndarray(packed, format="flt", layout=layout)
+                frame.sample_rate = audio.sample_rate
+                for packet in stream.encode(frame):
+                    container.mux(packet)
+            for packet in stream.encode():
+                container.mux(packet)
+        yield path
+
+
+@contextmanager
 def operation_context(context) -> Iterator[None]:
     """Bind ``context`` so ``emit`` can report from nested helper code."""
     token = _context.set((context, sys.stdout))
