@@ -1209,7 +1209,7 @@ wheels = [
 
 [[package]]
 name = "pymss"
-version = "2.3.4"
+version = "2.3.5"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
@@ -1248,7 +1248,7 @@ requires-dist = [
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.31.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "packaging", specifier = ">=24.0" },
-    { name = "pymss-core", specifier = "==0.1.14" },
+    { name = "pymss-core", specifier = "==0.1.15" },
     { name = "pysocks", marker = "extra == 'proxy'", specifier = ">=1.7.1,<2" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.7.1" },
@@ -1267,7 +1267,7 @@ dev = [
 
 [[package]]
 name = "pymss-core"
-version = "0.1.14"
+version = "0.1.15"
 source = { registry = "https://mirrors.cernet.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "numpy" },
@@ -1275,9 +1275,9 @@ dependencies = [
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torch", version = "2.12.0", source = { registry = "https://mirrors.cernet.edu.cn/pypi/web/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2b/fb/70618f1659df104e5a59a06b4ad57e1d69bc22def632622d7db39b677f83/pymss_core-0.1.14.tar.gz", hash = "sha256:4e581f5d578f004bed7c353ed2aea8fcd5effde94ca6cd2291f5bf740fe4f737" }
+sdist = { url = "https://mirror.nju.edu.cn/pypi/web/packages/0c/f3/8089f8d6b8da3af8ddd7ab6d6324f5b389ce4c6ce55d3affe09b9c086241/pymss_core-0.1.15.tar.gz", hash = "sha256:55e34030381d46395fbf9040d3c839f05e179aaf41d445361b71c3b917d07717" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/85/c847ed9d41454ffcd1932cf26b5084ca26f8982e43701a511ab783291bcd/pymss_core-0.1.14-py3-none-any.whl", hash = "sha256:10068f6591b7328a9c7cb7cd42858371664892a6c7e1f0b868be45925270049d" },
+    { url = "https://mirror.nju.edu.cn/pypi/web/packages/c1/dc/39986caa12749f3b94cc0de9e938907583790ce11774152d48937f67ecaa/pymss_core-0.1.15-py3-none-any.whl", hash = "sha256:423a1d15b2c515cec97f861edc102530e8257adf774a6af0a9dae591ec460677" },
 ]
 
 [[package]]
