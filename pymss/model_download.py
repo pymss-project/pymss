@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -338,7 +339,7 @@ def _already_valid(path, expected_size=None, expected_sha256=""):
 
     Returns:
         Any: Computed result."""
-    if not path.is_file():
+    if not path.is_file() or path.stat().st_size == 0:
         return False
     if expected_size is not None and path.stat().st_size != expected_size:
         return False
@@ -373,6 +374,8 @@ def _validate_downloaded_file(path, dest, expected_size=None, expected_sha256=""
 
     Returns:
         None: This callable completes for its side effects."""
+    if path.stat().st_size == 0:
+        raise DownloadValidationError(f"empty download for {dest.name}")
     if expected_size is not None and path.stat().st_size != expected_size:
         raise DownloadValidationError(f"size mismatch for {dest.name}: expected {expected_size}, got {path.stat().st_size}")
     if expected_sha256:
@@ -632,6 +635,23 @@ def files_for_model(model_name, model_dir=None):
     return entry, files
 
 
+def _catalog_size_and_hash(entry, relpath):
+    if relpath != getattr(entry, "relpath", None):
+        return None, ""
+    size = getattr(entry, "size_bytes", 0)
+    return (size if isinstance(size, int) and size > 0 else None), getattr(entry, "sha256", "") or ""
+
+
+def _cached_model_is_usable(entry, files):
+    primary = getattr(entry, "relpath", None)
+    if not primary or not any(relpath == primary for relpath, _ in files):
+        return False
+    size, digest = _catalog_size_and_hash(entry, primary)
+    if size is None and not digest:
+        return False
+    return all(_already_valid(dest, *_catalog_size_and_hash(entry, relpath)) for relpath, dest in files)
+
+
 def download_model(model_name, model_dir=None, source="modelscope", endpoint=None, verify=True, force=False, timeout=30, progress_callback=None, proxy=None):
     """Download all files required by one catalog model.
 
@@ -652,9 +672,12 @@ def download_model(model_name, model_dir=None, source="modelscope", endpoint=Non
         endpoint (str | None, optional): Custom endpoint prefix. When provided,
             the final URL is ``endpoint/relative/catalog/path`` and ``source``
             is ignored for URL construction. Defaults to None.
-        verify (bool, optional): Whether to validate downloads with available
-            ModelScope size/hash metadata. Custom endpoints skip source index
-            lookup. Defaults to True.
+        verify (bool, optional): Validate using available size/hash metadata.
+            A usable local cache is reused without network access. ModelScope
+            index metadata is optional and is fetched only for that source.
+            Offline checks use the catalog's primary size/hash and require
+            non-empty config/auxiliary files; they cannot verify unknown hashes.
+            Custom endpoints skip catalog and source-index checks. Defaults to True.
         force (bool, optional): Whether to redownload files even when existing
             local files appear valid. Defaults to False.
         timeout (int, optional): Network timeout in seconds. Defaults to 30.
@@ -691,13 +714,29 @@ def download_model(model_name, model_dir=None, source="modelscope", endpoint=Non
         ...     timeout=60,
         ... )"""
     entry, files = files_for_model(model_name, model_dir)
-    index = fetch_modelscope_file_index(timeout=timeout, proxy=proxy) if verify and endpoint is None else None
+    use_catalog = verify and endpoint is None
+    if use_catalog and not force and _cached_model_is_usable(entry, files):
+        return {"entry": entry, "downloaded": [], "skipped": [str(dest) for _, dest in files]}
+    index = None
+    if use_catalog and source == "modelscope":
+        try:
+            index = fetch_modelscope_file_index(timeout=timeout, proxy=proxy)
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as error:
+            logging.getLogger(__name__).warning(
+                "ModelScope file index is unavailable (%s); continuing with catalog metadata", type(error).__name__,
+            )
     downloaded = []
     skipped = []
 
     for relpath, dest in files:
         expected_size, expected_sha256 = _expected_size_and_hash(relpath, index)
-        if not force and _already_valid(dest, expected_size, expected_sha256):
+        if use_catalog:
+            size, digest = _catalog_size_and_hash(entry, relpath)
+            expected_size = expected_size if expected_size is not None else size
+            expected_sha256 = expected_sha256 or digest
+        can_reuse = (not use_catalog or expected_size is not None or bool(expected_sha256)
+                     or relpath != getattr(entry, "relpath", None))
+        if not force and can_reuse and _already_valid(dest, expected_size, expected_sha256):
             skipped.append(str(dest))
             continue
         url = remote_url(relpath, source=source, endpoint=endpoint)
